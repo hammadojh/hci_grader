@@ -30,6 +30,7 @@ interface CriteriaEvaluation {
   rubricId: string;
   selectedLevelIndex: number;
   feedback: string;
+  agentSuggestions?: AgentSuggestion[];
 }
 
 interface Answer {
@@ -54,6 +55,18 @@ interface Rubric {
   levels: RubricLevel[];
 }
 
+interface GradingAgent {
+  _id: string;
+  questionId: string;
+  name: string;
+  color: string;
+}
+
+interface AgentSuggestion {
+  agentId: string;
+  suggestedLevelIndex: number;
+}
+
 interface AnswerWithSubmission extends Answer {
   submission?: Submission;
 }
@@ -70,9 +83,13 @@ export default function GradeByQuestionPage() {
   const [answers, setAnswers] = useState<AnswerWithSubmission[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [rubrics, setRubrics] = useState<Rubric[]>([]);
+  const [gradingAgents, setGradingAgents] = useState<GradingAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [generatingAgent, setGeneratingAgent] = useState<string | null>(null);
+  const [openAgentMenuId, setOpenAgentMenuId] = useState<string | null>(null);
+  const [generatingAllAgents, setGeneratingAllAgents] = useState(false);
 
   // Local state for editing
   const [localAnswers, setLocalAnswers] = useState<{ [answerId: string]: Answer }>({});
@@ -83,14 +100,47 @@ export default function GradeByQuestionPage() {
     fetchData();
   }, [assignmentId, questionId]);
 
+  // Close agent menu when clicking outside
   useEffect(() => {
-    // Initialize local answers state
-    const localState: { [answerId: string]: Answer } = {};
-    answers.forEach((answer) => {
-      localState[answer._id!] = { ...answer };
+    const handleClickOutside = () => {
+      setOpenAgentMenuId(null);
+    };
+
+    if (openAgentMenuId) {
+      document.addEventListener('click', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [openAgentMenuId]);
+
+  useEffect(() => {
+    // Initialize local answers state ONLY when answers array actually changes
+    // Preserve existing localAnswers and only update/add new ones
+    setLocalAnswers(prevLocalAnswers => {
+      const localState: { [answerId: string]: Answer } = { ...prevLocalAnswers };
+      
+      answers.forEach((answer) => {
+        // Only initialize if this answer doesn't exist in local state yet
+        // OR if we need to preserve server data (after save/fetch)
+        if (!localState[answer._id!]) {
+          localState[answer._id!] = { ...answer };
+        } else {
+          // Preserve local changes but update answer text from server
+          localState[answer._id!] = {
+            ...localState[answer._id!],
+            answerText: answer.answerText,
+            // Keep local criteriaEvaluations which may have agent suggestions
+          };
+        }
+      });
+      
+      return localState;
     });
-    setLocalAnswers(localState);
-    
+  }, [answers]);
+
+  useEffect(() => {
     // Auto-select first answer if none selected
     if (answers.length > 0 && !selectedAnswerId) {
       setSelectedAnswerId(answers[0]._id);
@@ -136,6 +186,41 @@ export default function GradeByQuestionPage() {
       const rubricsRes = await fetch(`/api/rubrics?questionId=${questionId}`);
       const rubricsData = await rubricsRes.json();
       setRubrics(rubricsData);
+
+      // Fetch grading agents for this question
+      const agentsRes = await fetch(`/api/grading-agents?questionId=${questionId}`);
+      const agentsData = await agentsRes.json();
+      
+      // If no agents exist, create 3 default agents
+      if (agentsData.length === 0) {
+        const defaultAgents = [];
+        for (let i = 1; i <= 3; i++) {
+          const agentName = `g${i}`;
+          const agentColor = AGENT_COLORS[i - 1];
+          
+          try {
+            const createRes = await fetch('/api/grading-agents', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                questionId: questionId,
+                name: agentName,
+                color: agentColor,
+              }),
+            });
+            
+            if (createRes.ok) {
+              const newAgent = await createRes.json();
+              defaultAgents.push(newAgent);
+            }
+          } catch (error) {
+            console.error(`Error creating default agent ${agentName}:`, error);
+          }
+        }
+        setGradingAgents(defaultAgents);
+      } else {
+        setGradingAgents(agentsData);
+      }
 
       setLoading(false);
     } catch (error) {
@@ -191,6 +276,7 @@ export default function GradeByQuestionPage() {
       rubricId: rubric._id!,
       selectedLevelIndex: levelIndex,
       feedback: existingEvalIndex >= 0 ? answer.criteriaEvaluations[existingEvalIndex].feedback : '',
+      agentSuggestions: existingEvalIndex >= 0 ? answer.criteriaEvaluations[existingEvalIndex].agentSuggestions : [],
     };
 
     let updatedEvaluations: CriteriaEvaluation[];
@@ -294,6 +380,173 @@ export default function GradeByQuestionPage() {
     router.push(`/grade-by-question/${assignmentId}/${targetQuestionId}`);
   };
 
+  // Agent colors for visual distinction
+  const AGENT_COLORS = [
+    '#3B82F6', // blue
+    '#10B981', // green
+    '#F59E0B', // amber
+    '#EF4444', // red
+    '#8B5CF6', // purple
+    '#EC4899', // pink
+    '#14B8A6', // teal
+    '#F97316', // orange
+  ];
+
+  const addGradingAgent = async () => {
+    if (!question) return;
+    
+    const nextAgentNumber = gradingAgents.length + 1;
+    const agentName = `g${nextAgentNumber}`;
+    const agentColor = AGENT_COLORS[(nextAgentNumber - 1) % AGENT_COLORS.length];
+
+    try {
+      const response = await fetch('/api/grading-agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionId: question._id,
+          name: agentName,
+          color: agentColor,
+        }),
+      });
+
+      if (response.ok) {
+        const newAgent = await response.json();
+        setGradingAgents([...gradingAgents, newAgent]);
+      }
+    } catch (error) {
+      console.error('Error adding agent:', error);
+    }
+  };
+
+  const removeGradingAgent = async (agentId: string) => {
+    try {
+      const response = await fetch(`/api/grading-agents?agentId=${agentId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setGradingAgents(gradingAgents.filter(a => a._id !== agentId));
+        // Remove agent suggestions from all answers
+        const updatedLocalAnswers = { ...localAnswers };
+        Object.keys(updatedLocalAnswers).forEach(answerId => {
+          const answer = updatedLocalAnswers[answerId];
+          answer.criteriaEvaluations = answer.criteriaEvaluations.map(evaluation => ({
+            ...evaluation,
+            agentSuggestions: (evaluation.agentSuggestions || []).filter(s => s.agentId !== agentId),
+          }));
+        });
+        setLocalAnswers(updatedLocalAnswers);
+      }
+    } catch (error) {
+      console.error('Error removing agent:', error);
+    }
+  };
+
+  const generateAgentSuggestions = async (agentId: string) => {
+    if (!question) return;
+    
+    setGeneratingAgent(agentId);
+
+    try {
+      // Generate suggestions for all answers
+      for (const answerWithSubmission of answers) {
+        const response = await fetch('/api/agent-suggest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentId,
+            questionText: question.questionText,
+            currentAnswer: answerWithSubmission,
+            allAnswers: answers.map(a => ({ answerText: a.answerText })),
+            rubrics: rubrics,
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          
+          // Update state for this specific answer using functional form to get latest state
+          setLocalAnswers(prevAnswers => {
+            const answer = prevAnswers[answerWithSubmission._id] || answerWithSubmission;
+            
+            // Update local answers with agent suggestions
+            const updatedEvaluations = answer.criteriaEvaluations.map(evaluation => {
+              const suggestion = result.suggestions.find(
+                (s: any) => s.rubricId === evaluation.rubricId
+              );
+
+              if (suggestion) {
+                const existingSuggestions = evaluation.agentSuggestions || [];
+                const filteredSuggestions = existingSuggestions.filter(
+                  s => s.agentId !== agentId
+                );
+                return {
+                  ...evaluation,
+                  agentSuggestions: [
+                    ...filteredSuggestions,
+                    {
+                      agentId,
+                      suggestedLevelIndex: suggestion.suggestedLevelIndex,
+                    },
+                  ],
+                };
+              }
+
+              return evaluation;
+            });
+
+            // Add suggestions for rubrics not yet evaluated
+            const evaluatedRubricIds = answer.criteriaEvaluations.map(e => e.rubricId);
+            const newEvaluations = result.suggestions
+              .filter((s: any) => !evaluatedRubricIds.includes(s.rubricId))
+              .map((s: any) => ({
+                rubricId: s.rubricId,
+                selectedLevelIndex: s.suggestedLevelIndex,
+                feedback: '',
+                agentSuggestions: [
+                  {
+                    agentId,
+                    suggestedLevelIndex: s.suggestedLevelIndex,
+                  },
+                ],
+              }));
+
+            // Return updated state with this answer's new suggestions
+            return {
+              ...prevAnswers,
+              [answer._id!]: {
+                ...answer,
+                criteriaEvaluations: [...updatedEvaluations, ...newEvaluations],
+              },
+            };
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error generating agent suggestions:', error);
+    } finally {
+      setGeneratingAgent(null);
+    }
+  };
+
+  const generateAllAgentSuggestions = async () => {
+    if (gradingAgents.length === 0) return;
+    
+    setGeneratingAllAgents(true);
+
+    try {
+      // Run all agents sequentially so they don't overwrite each other
+      for (const agent of gradingAgents) {
+        await generateAgentSuggestions(agent._id);
+      }
+    } catch (error) {
+      console.error('Error generating all agent suggestions:', error);
+    } finally {
+      setGeneratingAllAgents(false);
+    }
+  };
+
   const getQuestionMaxPoints = () => {
     if (!question || !assignment) return 0;
     return (question.pointsPercentage / 100) * assignment.totalPoints;
@@ -368,6 +621,85 @@ export default function GradeByQuestionPage() {
                   <p className="text-xs text-orange-600">⚠️ No rubrics</p>
                 )}
               </div>
+
+              {/* Agent Circles */}
+              <div className="flex items-center gap-2">
+                {/* Existing Agent Circles */}
+                {gradingAgents.map((agent) => (
+                  <div
+                    key={agent._id}
+                    className="relative"
+                  >
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm cursor-pointer transition-all ${
+                        generatingAgent === agent._id ? 'animate-pulse' : 'hover:scale-110'
+                      }`}
+                      style={{ backgroundColor: agent.color }}
+                      title={`Agent ${agent.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenAgentMenuId(openAgentMenuId === agent._id ? null : agent._id);
+                      }}
+                    >
+                      {agent.name}
+                    </div>
+
+                    {/* Click Popup Menu */}
+                    {openAgentMenuId === agent._id && generatingAgent === null && !generatingAllAgents && (
+                      <div 
+                        className="absolute top-12 left-1/2 transform -translate-x-1/2 bg-white border-2 border-gray-300 rounded-lg shadow-xl z-50 min-w-[120px]"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => {
+                            setOpenAgentMenuId(null);
+                            generateAgentSuggestions(agent._id);
+                          }}
+                          className="w-full px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 rounded-t-lg transition-colors"
+                        >
+                          ▶️ Run
+                        </button>
+                        <div className="border-t border-gray-200"></div>
+                        <button
+                          onClick={() => {
+                            setOpenAgentMenuId(null);
+                            removeGradingAgent(agent._id);
+                          }}
+                          className="w-full px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-b-lg transition-colors"
+                        >
+                          🗑️ Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Add Agent Circle */}
+                <button
+                  onClick={addGradingAgent}
+                  disabled={generatingAgent !== null || generatingAllAgents}
+                  className="w-10 h-10 rounded-full border-2 border-dashed border-purple-400 flex items-center justify-center text-purple-600 hover:bg-purple-50 hover:border-purple-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Add new agent"
+                >
+                  <span className="text-xl font-bold">+</span>
+                </button>
+              </div>
+
+              {/* Run All Button */}
+              {gradingAgents.length > 0 && (
+                <button
+                  onClick={generateAllAgentSuggestions}
+                  disabled={generatingAgent !== null || generatingAllAgents}
+                  className={`px-4 py-2 rounded-lg font-semibold text-white transition-colors ${
+                    generatingAllAgents
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-purple-600 hover:bg-purple-700'
+                  }`}
+                >
+                  {generatingAllAgents ? 'Running All...' : '▶️ Run All'}
+                </button>
+              )}
+
               <button
                 onClick={saveAllGrades}
                 disabled={saving}
@@ -577,35 +909,78 @@ export default function GradeByQuestionPage() {
                                   </h5>
 
                                   <div className="mb-2">
-                                    <select
-                                      value={evaluation?.selectedLevelIndex ?? ''}
-                                      onChange={(e) => {
-                                        if (e.target.value !== '') {
-                                          selectCriteriaLevel(answer._id!, rubric, Number(e.target.value));
-                                        }
-                                      }}
-                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
-                                    >
-                                      <option value="">Select level...</option>
-                                      {rubric.levels.map((level, levelIdx) => (
-                                        <option key={levelIdx} value={levelIdx}>
-                                          {level.name} ({level.percentage}%) - {level.description}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    {/* Level Options with Agent Suggestions */}
+                                    <div className="space-y-2">
+                                      {rubric.levels.map((level, levelIdx) => {
+                                        const isSelected = evaluation?.selectedLevelIndex === levelIdx;
+                                        const agentSuggestions = evaluation?.agentSuggestions || [];
+                                        const agentsForThisLevel = agentSuggestions.filter(
+                                          s => s.suggestedLevelIndex === levelIdx
+                                        );
+
+                                        return (
+                                          <button
+                                            key={levelIdx}
+                                            type="button"
+                                            onClick={() => selectCriteriaLevel(answer._id!, rubric, levelIdx)}
+                                            className={`w-full p-2 rounded-lg border-2 text-left transition-all ${
+                                              isSelected
+                                                ? 'border-indigo-600 bg-indigo-50 shadow-md'
+                                                : 'border-gray-300 hover:border-indigo-400 bg-white'
+                                            }`}
+                                          >
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-2 flex-1">
+                                                {/* Agent suggestion circles */}
+                                                {agentsForThisLevel.length > 0 && (
+                                                  <div className="flex gap-1">
+                                                    {agentsForThisLevel.map((suggestion) => {
+                                                      const agent = gradingAgents.find(
+                                                        a => a._id === suggestion.agentId
+                                                      );
+                                                      if (!agent) return null;
+                                                      return (
+                                                        <div
+                                                          key={agent._id}
+                                                          className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                                                          style={{ backgroundColor: agent.color }}
+                                                          title={`Agent ${agent.name} suggests this level`}
+                                                        >
+                                                          {agent.name}
+                                                        </div>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                )}
+                                                <div className="flex-1">
+                                                  <p className="font-semibold text-gray-800 text-xs">
+                                                    {level.name}
+                                                  </p>
+                                                  <p className="text-xs text-gray-600 line-clamp-1">
+                                                    {level.description}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                              <span
+                                                className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                                  isSelected
+                                                    ? 'bg-indigo-600 text-white'
+                                                    : 'bg-gray-200 text-gray-800'
+                                                }`}
+                                              >
+                                                {level.percentage}%
+                                              </span>
+                                            </div>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
                                     
-                                    {/* Show selected level details */}
+                                    {/* Show selected level full details */}
                                     {evaluation && (
                                       <div className="mt-2 p-2 bg-indigo-50 rounded border border-indigo-200">
-                                        <div className="flex justify-between items-start mb-1">
-                                          <p className="font-semibold text-indigo-900 text-xs">
-                                            {rubric.levels[evaluation.selectedLevelIndex].name}
-                                          </p>
-                                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-600 text-white">
-                                            {rubric.levels[evaluation.selectedLevelIndex].percentage}%
-                                          </span>
-                                        </div>
                                         <p className="text-xs text-indigo-700">
+                                          <span className="font-semibold">Selected:</span>{' '}
                                           {rubric.levels[evaluation.selectedLevelIndex].description}
                                         </p>
                                       </div>

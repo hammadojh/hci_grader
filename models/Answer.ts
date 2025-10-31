@@ -1,9 +1,15 @@
 import mongoose, { Schema, model, models } from 'mongoose';
 
+export interface IAgentSuggestion {
+  agentId: string;
+  suggestedLevelIndex: number;
+}
+
 export interface ICriteriaEvaluation {
   rubricId: string;
   selectedLevelIndex: number;
   feedback: string;
+  agentSuggestions?: IAgentSuggestion[];
 }
 
 export interface IAnswer {
@@ -16,6 +22,18 @@ export interface IAnswer {
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+const AgentSuggestionSchema = new Schema<IAgentSuggestion>({
+  agentId: {
+    type: String,
+    required: true,
+    ref: 'GradingAgent',
+  },
+  suggestedLevelIndex: {
+    type: Number,
+    required: true,
+  },
+}, { _id: false });
 
 const CriteriaEvaluationSchema = new Schema<ICriteriaEvaluation>({
   rubricId: {
@@ -30,6 +48,10 @@ const CriteriaEvaluationSchema = new Schema<ICriteriaEvaluation>({
   feedback: {
     type: String,
     default: '',
+  },
+  agentSuggestions: {
+    type: [AgentSuggestionSchema],
+    default: [],
   },
 }, { _id: false });
 

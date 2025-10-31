@@ -18,15 +18,17 @@ export default function Home() {
   const [description, setDescription] = useState('');
   const [totalPoints, setTotalPoints] = useState(100);
 
-  useEffect(() => {
-    fetchAssignments();
-  }, []);
-
   const fetchAssignments = async () => {
     const res = await fetch('/api/assignments');
     const data = await res.json();
     setAssignments(data);
   };
+
+  useEffect(() => {
+    // Fetch assignments on component mount
+    // eslint-disable-next-line
+    fetchAssignments();
+  }, []);
 
   const createAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,8 +55,18 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
       <div className="max-w-6xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">HCI Grader</h1>
-          <p className="text-gray-600">Manage assignments, rubrics, and grading efficiently</p>
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-800 mb-2">HCI Grader</h1>
+              <p className="text-gray-600">Manage assignments, rubrics, and grading efficiently</p>
+            </div>
+            <Link
+              href="/settings"
+              className="bg-gray-700 hover:bg-gray-800 text-white px-6 py-2 rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              ⚙️ Settings
+            </Link>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-8">

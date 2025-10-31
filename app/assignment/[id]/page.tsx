@@ -64,6 +64,21 @@ export default function AssignmentDetail() {
     { name: '', description: '', percentage: 0 },
   ]);
 
+  // AI Rubric Helper state
+  const [showAIHelper, setShowAIHelper] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [numberOfLevels, setNumberOfLevels] = useState(4);
+  const [aiGeneratedRubrics, setAiGeneratedRubrics] = useState<Array<{
+    _id?: string;
+    criteriaName: string;
+    description?: string;
+    levels: RubricLevel[];
+  }>>([]);
+  const [aiExplanation, setAiExplanation] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; content: string }>>([]);
+  const [aiError, setAiError] = useState('');
+
   // Submission form state
   const [showSubmissionForm, setShowSubmissionForm] = useState(false);
   const [studentName, setStudentName] = useState('');
@@ -74,6 +89,7 @@ export default function AssignmentDetail() {
     fetchAssignment();
     fetchQuestions();
     fetchSubmissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignmentId]);
 
   useEffect(() => {
@@ -124,7 +140,7 @@ export default function AssignmentDetail() {
 
   const createOrUpdateQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (editingQuestion) {
       // Update existing question
       await fetch(`/api/questions/${editingQuestion._id}`, {
@@ -149,7 +165,7 @@ export default function AssignmentDetail() {
         }),
       });
     }
-    
+
     cancelQuestionEdit();
     fetchQuestions();
   };
@@ -217,7 +233,7 @@ export default function AssignmentDetail() {
         }),
       });
     }
-    
+
     fetchRubrics(selectedQuestionForRubric);
     cancelRubricEdit();
   };
@@ -226,6 +242,170 @@ export default function AssignmentDetail() {
     if (confirm('Are you sure you want to delete this rubric?')) {
       await fetch(`/api/rubrics/${rubricId}`, { method: 'DELETE' });
       fetchRubrics(questionId);
+    }
+  };
+
+  // AI Rubric Helper functions
+  const openAIHelper = (questionId: string) => {
+    setSelectedQuestionForRubric(questionId);
+    setShowAIHelper(true);
+    setAiPrompt('');
+    setConversationHistory([]);
+    setAiError('');
+    
+    // Load existing rubrics if available
+    const existingRubrics = rubrics[questionId] || [];
+    if (existingRubrics.length > 0) {
+      // Pre-populate with existing rubrics (keep _id for updating)
+      setAiGeneratedRubrics(existingRubrics.map(rubric => ({
+        _id: rubric._id,
+        criteriaName: rubric.criteriaName,
+        levels: [...rubric.levels]
+      })));
+      setAiExplanation('Loaded existing rubrics. You can edit them below or ask AI to refine them.');
+    } else {
+      // Start fresh
+      setAiGeneratedRubrics([]);
+      setAiExplanation('');
+    }
+  };
+
+  const closeAIHelper = () => {
+    setShowAIHelper(false);
+    setAiPrompt('');
+    setAiGeneratedRubrics([]);
+    setAiExplanation('');
+    setConversationHistory([]);
+    setAiError('');
+    setSelectedQuestionForRubric(null);
+  };
+
+  const generateAIRubrics = async (isFollowUp: boolean = false) => {
+    if (!aiPrompt.trim()) return;
+
+    setIsGenerating(true);
+    setAiError('');
+
+    try {
+      // Prepare the request payload
+      const payload: any = {
+        userPrompt: aiPrompt,
+        numberOfLevels: isFollowUp ? undefined : numberOfLevels,
+        conversationHistory: isFollowUp ? conversationHistory : undefined,
+      };
+
+      // Include current rubrics as context for refinement (both follow-up and initial if rubrics exist)
+      if (aiGeneratedRubrics.length > 0) {
+        payload.currentRubrics = aiGeneratedRubrics.map(rubric => ({
+          criteriaName: rubric.criteriaName,
+          levels: rubric.levels
+        }));
+      }
+
+      const response = await fetch('/api/ai-rubric', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setAiError(data.error || 'Failed to generate rubrics');
+        return;
+      }
+
+      // When refining existing rubrics, preserve their IDs
+      const updatedRubrics = data.rubrics || [];
+      if (isFollowUp && aiGeneratedRubrics.length > 0) {
+        // Map new rubrics to existing ones by criteria name to preserve IDs
+        const rubricsWithIds = updatedRubrics.map((newRubric: any, index: number) => {
+          // Try to find matching existing rubric by criteria name
+          const existingRubric = aiGeneratedRubrics.find(
+            r => r.criteriaName.toLowerCase() === newRubric.criteriaName.toLowerCase()
+          );
+          return {
+            ...newRubric,
+            _id: existingRubric?._id || aiGeneratedRubrics[index]?._id
+          };
+        });
+        setAiGeneratedRubrics(rubricsWithIds);
+      } else {
+        setAiGeneratedRubrics(updatedRubrics);
+      }
+
+      setAiExplanation(data.explanation || '');
+      setConversationHistory(data.conversationHistory || []);
+      setAiPrompt('');
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setAiError('Failed to generate rubrics. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const editAIRubric = (index: number, field: string, value: string | number, levelIndex?: number) => {
+    const updated = [...aiGeneratedRubrics];
+    if (levelIndex !== undefined) {
+      // Editing a level field
+      const level = updated[index].levels[levelIndex];
+      if (field === 'name' || field === 'description') {
+        level[field] = value as string;
+      } else if (field === 'percentage') {
+        level[field] = value as number;
+      }
+    } else {
+      // Editing a rubric field
+      if (field === 'criteriaName') {
+        updated[index].criteriaName = value as string;
+      } else if (field === 'description') {
+        updated[index].description = value as string;
+      }
+    }
+    setAiGeneratedRubrics(updated);
+  };
+
+  const removeAIRubric = (index: number) => {
+    setAiGeneratedRubrics(aiGeneratedRubrics.filter((_, i) => i !== index));
+  };
+
+  const approveAIRubrics = async () => {
+    if (!selectedQuestionForRubric || aiGeneratedRubrics.length === 0) return;
+
+    try {
+      // Update or create rubrics based on whether they have an _id
+      for (const rubric of aiGeneratedRubrics) {
+        if (rubric._id) {
+          // Update existing rubric
+          await fetch(`/api/rubrics/${rubric._id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              criteriaName: rubric.criteriaName,
+              levels: rubric.levels,
+            }),
+          });
+        } else {
+          // Create new rubric
+          await fetch('/api/rubrics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              questionId: selectedQuestionForRubric,
+              criteriaName: rubric.criteriaName,
+              levels: rubric.levels,
+            }),
+          });
+        }
+      }
+
+      // Refresh rubrics and close AI helper
+      fetchRubrics(selectedQuestionForRubric);
+      closeAIHelper();
+    } catch (error) {
+      console.error('Failed to approve rubrics:', error);
+      setAiError('Failed to save rubrics. Please try again.');
     }
   };
 
@@ -287,12 +467,20 @@ export default function AssignmentDetail() {
               <p className="text-gray-600 mt-2">{assignment.description}</p>
               <p className="text-indigo-600 font-semibold mt-2">Total Points: {assignment.totalPoints}</p>
             </div>
-            <button
-              onClick={exportCSV}
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-            >
-              📊 Export CSV
-            </button>
+            <div className="flex gap-2">
+              <Link
+                href="/settings"
+                className="bg-gray-700 hover:bg-gray-800 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+              >
+                ⚙️ Settings
+              </Link>
+              <button
+                onClick={exportCSV}
+                className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+              >
+                📊 Export CSV
+              </button>
+            </div>
           </div>
         </div>
 
@@ -300,21 +488,19 @@ export default function AssignmentDetail() {
           <div className="flex border-b border-gray-200 mb-6">
             <button
               onClick={() => setActiveTab('questions')}
-              className={`px-6 py-3 font-semibold transition-colors ${
-                activeTab === 'questions'
-                  ? 'border-b-2 border-indigo-600 text-indigo-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`px-6 py-3 font-semibold transition-colors ${activeTab === 'questions'
+                ? 'border-b-2 border-indigo-600 text-indigo-600'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               Questions & Rubrics
             </button>
             <button
               onClick={() => setActiveTab('submissions')}
-              className={`px-6 py-3 font-semibold transition-colors ${
-                activeTab === 'submissions'
-                  ? 'border-b-2 border-indigo-600 text-indigo-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`px-6 py-3 font-semibold transition-colors ${activeTab === 'submissions'
+                ? 'border-b-2 border-indigo-600 text-indigo-600'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               Submissions & Grading
             </button>
@@ -431,17 +617,25 @@ export default function AssignmentDetail() {
                     <div className="mt-4">
                       <div className="flex justify-between items-center mb-3">
                         <h4 className="font-semibold text-gray-700">Rubrics</h4>
-                        <button
-                          onClick={() => {
-                            setSelectedQuestionForRubric(question._id);
-                            setEditingRubric(null);
-                            setRubricCriteriaName('');
-                            setRubricLevels([{ name: '', description: '', percentage: 0 }]);
-                          }}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 rounded-lg text-sm font-semibold transition-colors"
-                        >
-                          + Add Rubric
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => openAIHelper(question._id)}
+                            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-1 rounded-lg text-sm font-semibold transition-colors"
+                          >
+                            ✨ AI Helper
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedQuestionForRubric(question._id);
+                              setEditingRubric(null);
+                              setRubricCriteriaName('');
+                              setRubricLevels([{ name: '', description: '', percentage: 0 }]);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 rounded-lg text-sm font-semibold transition-colors"
+                          >
+                            + Add Rubric
+                          </button>
+                        </div>
                       </div>
 
                       {(selectedQuestionForRubric === question._id || editingRubric?.questionId === question._id) && (
@@ -696,6 +890,220 @@ export default function AssignmentDetail() {
             </div>
           )}
         </div>
+
+        {/* AI Rubric Helper Modal */}
+        {showAIHelper && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-800">✨ AI Rubric Helper</h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Describe the criteria you want to assess and let AI suggest comprehensive rubrics
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeAIHelper}
+                    className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                {/* Initial Prompt Section - Show when no rubrics OR when showing existing rubrics */}
+                {aiGeneratedRubrics.length === 0 && (
+                  <div className="mb-6">
+                    <div className="mb-4">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        What criteria do you want to assess?
+                      </label>
+                      <textarea
+                        value={aiPrompt}
+                        onChange={(e) => setAiPrompt(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        rows={4}
+                        placeholder="Example: I want to assess students' understanding of UX design principles, including their ability to identify usability issues, propose solutions, and justify their design decisions."
+                      />
+                    </div>
+
+                    <div className="mb-4">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Number of Performance Levels
+                      </label>
+                      <select
+                        value={numberOfLevels}
+                        onChange={(e) => setNumberOfLevels(Number(e.target.value))}
+                        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      >
+                        <option value={2}>2 Levels</option>
+                        <option value={3}>3 Levels</option>
+                        <option value={4}>4 Levels</option>
+                        <option value={5}>5 Levels</option>
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={() => generateAIRubrics(false)}
+                      disabled={isGenerating || !aiPrompt.trim()}
+                      className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                    >
+                      {isGenerating ? 'Generating...' : '🚀 Generate Rubrics'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Error Message */}
+                {aiError && (
+                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-red-800 text-sm">{aiError}</p>
+                    {aiError.includes('API key') && (
+                      <Link
+                        href="/settings"
+                        className="text-red-600 hover:text-red-800 text-sm underline mt-2 inline-block"
+                      >
+                        Go to Settings
+                      </Link>
+                    )}
+                  </div>
+                )}
+
+                {/* AI Generated Rubrics */}
+                {aiGeneratedRubrics.length > 0 && (
+                  <div>
+                    {/* AI Explanation or Status */}
+                    {aiExplanation && (
+                      <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                        <h3 className="font-semibold text-purple-900 mb-2">
+                          {aiExplanation.includes('Loaded existing') ? '📋 Current Rubrics' : '✨ AI Recommendations'}
+                        </h3>
+                        <p className="text-purple-800 text-sm">{aiExplanation}</p>
+                      </div>
+                    )}
+
+                    {/* Editable Rubrics */}
+                    <div className="space-y-6 mb-6">
+                      {aiGeneratedRubrics.map((rubric, rubricIndex) => (
+                        <div key={rubricIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="flex-1">
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Criteria Name
+                              </label>
+                              <input
+                                type="text"
+                                value={rubric.criteriaName}
+                                onChange={(e) => editAIRubric(rubricIndex, 'criteriaName', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                              />
+                              {rubric.description && (
+                                <p className="text-sm text-gray-600 mt-2">{rubric.description}</p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => removeAIRubric(rubricIndex)}
+                              className="ml-4 text-red-600 hover:text-red-800 font-semibold text-sm"
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div className="space-y-3">
+                            <label className="block text-sm font-semibold text-gray-700">
+                              Performance Levels
+                            </label>
+                            {rubric.levels.map((level: RubricLevel, levelIndex: number) => (
+                              <div key={levelIndex} className="bg-white p-3 rounded-lg border border-gray-200">
+                                <div className="grid grid-cols-2 gap-3 mb-2">
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                      Level Name
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={level.name}
+                                      onChange={(e) => editAIRubric(rubricIndex, 'name', e.target.value, levelIndex)}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-purple-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                      Percentage (0-100)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={level.percentage}
+                                      onChange={(e) => editAIRubric(rubricIndex, 'percentage', Number(e.target.value), levelIndex)}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-purple-500"
+                                      min={0}
+                                      max={100}
+                                    />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                    Description
+                                  </label>
+                                  <textarea
+                                    value={level.description}
+                                    onChange={(e) => editAIRubric(rubricIndex, 'description', e.target.value, levelIndex)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-purple-500"
+                                    rows={2}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Follow-up Prompt / Refinement Section */}
+                    <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        {aiExplanation.includes('Loaded existing') 
+                          ? 'Ask AI to refine these rubrics' 
+                          : 'Need changes? Ask AI to refine the rubrics'}
+                      </label>
+                      <textarea
+                        value={aiPrompt}
+                        onChange={(e) => setAiPrompt(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-3"
+                        rows={3}
+                        placeholder="Example: Make the descriptions more specific, add a criterion for code quality, increase the weight for correctness, make level descriptions more detailed..."
+                      />
+                      <button
+                        onClick={() => generateAIRubrics(true)}
+                        disabled={isGenerating || !aiPrompt.trim()}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                      >
+                        {isGenerating ? 'Refining...' : '🔄 Refine with AI'}
+                      </button>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-3">
+                      <button
+                        onClick={closeAIHelper}
+                        className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={approveAIRubrics}
+                        className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                      >
+                        {aiGeneratedRubrics.some(r => r._id) ? '✓ Save Changes' : '✓ Approve & Add Rubrics'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ interface Assignment {
   _id: string;
   title: string;
   description: string;
+  totalPoints: number;
 }
 
 interface Question {
@@ -15,15 +16,20 @@ interface Question {
   assignmentId: string;
   questionText: string;
   questionNumber: number;
-  maxPoints: number;
+  pointsPercentage: number;
+}
+
+interface RubricLevel {
+  name: string;
+  description: string;
+  percentage: number;
 }
 
 interface Rubric {
   _id: string;
   questionId: string;
-  criteria: string;
-  points: number;
-  description: string;
+  criteriaName: string;
+  levels: RubricLevel[];
 }
 
 interface Submission {
@@ -46,14 +52,15 @@ export default function AssignmentDetail() {
   // Question form state
   const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [questionText, setQuestionText] = useState('');
-  const [maxPoints, setMaxPoints] = useState(100);
+  const [pointsPercentage, setPointsPercentage] = useState(0);
 
   // Rubric form state
   const [selectedQuestionForRubric, setSelectedQuestionForRubric] = useState<string | null>(null);
   const [rubrics, setRubrics] = useState<{ [questionId: string]: Rubric[] }>({});
-  const [rubricCriteria, setRubricCriteria] = useState('');
-  const [rubricPoints, setRubricPoints] = useState(0);
-  const [rubricDescription, setRubricDescription] = useState('');
+  const [rubricCriteriaName, setRubricCriteriaName] = useState('');
+  const [rubricLevels, setRubricLevels] = useState<RubricLevel[]>([
+    { name: '', description: '', percentage: 0 },
+  ]);
 
   // Submission form state
   const [showSubmissionForm, setShowSubmissionForm] = useState(false);
@@ -95,6 +102,10 @@ export default function AssignmentDetail() {
     setSubmissions(data);
   };
 
+  const getTotalPercentage = () => {
+    return questions.reduce((sum, q) => sum + q.pointsPercentage, 0);
+  };
+
   const createQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     const questionNumber = questions.length + 1;
@@ -105,13 +116,29 @@ export default function AssignmentDetail() {
         assignmentId,
         questionText,
         questionNumber,
-        maxPoints,
+        pointsPercentage,
       }),
     });
     setQuestionText('');
-    setMaxPoints(100);
+    setPointsPercentage(0);
     setShowQuestionForm(false);
     fetchQuestions();
+  };
+
+  const addRubricLevel = () => {
+    setRubricLevels([...rubricLevels, { name: '', description: '', percentage: 0 }]);
+  };
+
+  const removeRubricLevel = (index: number) => {
+    if (rubricLevels.length > 1) {
+      setRubricLevels(rubricLevels.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateRubricLevel = (index: number, field: keyof RubricLevel, value: string | number) => {
+    const updated = [...rubricLevels];
+    updated[index] = { ...updated[index], [field]: value };
+    setRubricLevels(updated);
   };
 
   const createRubric = async (e: React.FormEvent) => {
@@ -123,14 +150,12 @@ export default function AssignmentDetail() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         questionId: selectedQuestionForRubric,
-        criteria: rubricCriteria,
-        points: rubricPoints,
-        description: rubricDescription,
+        criteriaName: rubricCriteriaName,
+        levels: rubricLevels,
       }),
     });
-    setRubricCriteria('');
-    setRubricPoints(0);
-    setRubricDescription('');
+    setRubricCriteriaName('');
+    setRubricLevels([{ name: '', description: '', percentage: 0 }]);
     fetchRubrics(selectedQuestionForRubric);
     setSelectedQuestionForRubric(null);
   };
@@ -193,6 +218,7 @@ export default function AssignmentDetail() {
               </Link>
               <h1 className="text-4xl font-bold text-gray-800">{assignment.title}</h1>
               <p className="text-gray-600 mt-2">{assignment.description}</p>
+              <p className="text-indigo-600 font-semibold mt-2">Total Points: {assignment.totalPoints}</p>
             </div>
             <button
               onClick={exportCSV}
@@ -230,7 +256,14 @@ export default function AssignmentDetail() {
           {activeTab === 'questions' && (
             <div>
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Questions</h2>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800">Questions</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Total Percentage: {getTotalPercentage()}% {getTotalPercentage() !== 100 && (
+                      <span className="text-orange-600 font-semibold">(Should be 100%)</span>
+                    )}
+                  </p>
+                </div>
                 <button
                   onClick={() => setShowQuestionForm(!showQuestionForm)}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
@@ -255,15 +288,21 @@ export default function AssignmentDetail() {
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Max Points
+                      Points Percentage (% of {assignment.totalPoints} points)
                     </label>
                     <input
                       type="number"
-                      value={maxPoints}
-                      onChange={(e) => setMaxPoints(Number(e.target.value))}
+                      value={pointsPercentage}
+                      onChange={(e) => setPointsPercentage(Number(e.target.value))}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      min={0}
+                      max={100}
+                      step={0.1}
                       required
                     />
+                    <p className="text-sm text-gray-600 mt-1">
+                      This question will be worth {((pointsPercentage / 100) * assignment.totalPoints).toFixed(2)} points
+                    </p>
                   </div>
                   <button
                     type="submit"
@@ -282,7 +321,9 @@ export default function AssignmentDetail() {
                         Question {question.questionNumber}
                       </h3>
                       <p className="text-gray-700 mb-2">{question.questionText}</p>
-                      <p className="text-sm text-gray-600">Max Points: {question.maxPoints}</p>
+                      <p className="text-sm text-indigo-600 font-semibold">
+                        {question.pointsPercentage}% ({((question.pointsPercentage / 100) * assignment.totalPoints).toFixed(2)} points)
+                      </p>
                     </div>
 
                     <div className="mt-4">
@@ -300,40 +341,77 @@ export default function AssignmentDetail() {
                         <form onSubmit={createRubric} className="mb-4 p-4 bg-blue-50 rounded-lg">
                           <div className="mb-3">
                             <label className="block text-sm font-semibold text-gray-700 mb-1">
-                              Criteria
+                              Criteria Name
                             </label>
                             <input
                               type="text"
-                              value={rubricCriteria}
-                              onChange={(e) => setRubricCriteria(e.target.value)}
+                              value={rubricCriteriaName}
+                              onChange={(e) => setRubricCriteriaName(e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="e.g., Accuracy, Completeness, Clarity"
                               required
                             />
                           </div>
+
                           <div className="mb-3">
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">
-                              Points
-                            </label>
-                            <input
-                              type="number"
-                              value={rubricPoints}
-                              onChange={(e) => setRubricPoints(Number(e.target.value))}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              required
-                            />
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-sm font-semibold text-gray-700">
+                                Levels (at least 1 required)
+                              </label>
+                              <button
+                                type="button"
+                                onClick={addRubricLevel}
+                                className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm"
+                              >
+                                + Add Level
+                              </button>
+                            </div>
+
+                            {rubricLevels.map((level, index) => (
+                              <div key={index} className="bg-white p-3 rounded-lg mb-2 border border-gray-200">
+                                <div className="flex justify-between items-center mb-2">
+                                  <span className="text-sm font-semibold text-gray-700">Level {index + 1}</span>
+                                  {rubricLevels.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeRubricLevel(index)}
+                                      className="text-red-600 hover:text-red-800 text-sm"
+                                    >
+                                      Remove
+                                    </button>
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  value={level.name}
+                                  onChange={(e) => updateRubricLevel(index, 'name', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500"
+                                  placeholder="Level name (e.g., Excellent, Good)"
+                                  required
+                                />
+                                <textarea
+                                  value={level.description}
+                                  onChange={(e) => updateRubricLevel(index, 'description', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500"
+                                  placeholder="Description"
+                                  rows={2}
+                                  required
+                                />
+                                <input
+                                  type="number"
+                                  value={level.percentage}
+                                  onChange={(e) => updateRubricLevel(index, 'percentage', Number(e.target.value))}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                  placeholder="Percentage (0-100)"
+                                  min={0}
+                                  max={100}
+                                  step={0.1}
+                                  required
+                                />
+                              </div>
+                            ))}
                           </div>
-                          <div className="mb-3">
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">
-                              Description
-                            </label>
-                            <textarea
-                              value={rubricDescription}
-                              onChange={(e) => setRubricDescription(e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              rows={2}
-                              required
-                            />
-                          </div>
+
                           <div className="flex gap-2">
                             <button
                               type="submit"
@@ -343,7 +421,11 @@ export default function AssignmentDetail() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => setSelectedQuestionForRubric(null)}
+                              onClick={() => {
+                                setSelectedQuestionForRubric(null);
+                                setRubricCriteriaName('');
+                                setRubricLevels([{ name: '', description: '', percentage: 0 }]);
+                              }}
                               className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
                             >
                               Cancel
@@ -352,19 +434,28 @@ export default function AssignmentDetail() {
                         </form>
                       )}
 
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {rubrics[question._id]?.map((rubric) => (
                           <div
                             key={rubric._id}
-                            className="bg-gray-50 p-3 rounded-lg flex justify-between items-start"
+                            className="bg-gray-50 p-4 rounded-lg"
                           >
-                            <div>
-                              <p className="font-semibold text-gray-800">{rubric.criteria}</p>
-                              <p className="text-sm text-gray-600">{rubric.description}</p>
+                            <h5 className="font-bold text-gray-800 mb-2">{rubric.criteriaName}</h5>
+                            <div className="space-y-2">
+                              {rubric.levels.map((level, idx) => (
+                                <div key={idx} className="bg-white p-3 rounded border border-gray-200">
+                                  <div className="flex justify-between items-start">
+                                    <div className="flex-1">
+                                      <p className="font-semibold text-gray-800">{level.name}</p>
+                                      <p className="text-sm text-gray-600">{level.description}</p>
+                                    </div>
+                                    <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold ml-2">
+                                      {level.percentage}%
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                            <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold">
-                              {rubric.points} pts
-                            </span>
                           </div>
                         ))}
                         {(!rubrics[question._id] || rubrics[question._id].length === 0) && (
@@ -487,4 +578,3 @@ export default function AssignmentDetail() {
     </div>
   );
 }
-

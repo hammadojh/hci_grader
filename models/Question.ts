@@ -5,7 +5,7 @@ export interface IQuestion {
   assignmentId: string;
   questionText: string;
   questionNumber: number;
-  maxPoints: number;
+  pointsPercentage: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -25,10 +25,12 @@ const QuestionSchema = new Schema<IQuestion>(
       type: Number,
       required: true,
     },
-    maxPoints: {
+    pointsPercentage: {
       type: Number,
       required: true,
-      default: 100,
+      default: 0,
+      min: 0,
+      max: 100,
     },
   },
   {

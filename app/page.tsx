@@ -7,6 +7,7 @@ interface Assignment {
   _id: string;
   title: string;
   description: string;
+  totalPoints: number;
   createdAt: string;
 }
 
@@ -15,6 +16,7 @@ export default function Home() {
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [totalPoints, setTotalPoints] = useState(100);
 
   useEffect(() => {
     fetchAssignments();
@@ -31,10 +33,11 @@ export default function Home() {
     await fetch('/api/assignments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description }),
+      body: JSON.stringify({ title, description, totalPoints }),
     });
     setTitle('');
     setDescription('');
+    setTotalPoints(100);
     setIsCreating(false);
     fetchAssignments();
   };
@@ -91,6 +94,19 @@ export default function Home() {
                   required
                 />
               </div>
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Total Points
+                </label>
+                <input
+                  type="number"
+                  value={totalPoints}
+                  onChange={(e) => setTotalPoints(Number(e.target.value))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  min={1}
+                  required
+                />
+              </div>
               <button
                 type="submit"
                 className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
@@ -116,7 +132,10 @@ export default function Home() {
                       <h3 className="text-xl font-bold text-gray-800 mb-2">
                         {assignment.title}
                       </h3>
-                      <p className="text-gray-600 mb-4">{assignment.description}</p>
+                      <p className="text-gray-600 mb-2">{assignment.description}</p>
+                      <p className="text-sm text-indigo-600 font-semibold mb-2">
+                        Total Points: {assignment.totalPoints}
+                      </p>
                       <p className="text-sm text-gray-500">
                         Created: {new Date(assignment.createdAt).toLocaleDateString()}
                       </p>

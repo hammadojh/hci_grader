@@ -15,13 +15,14 @@ interface Submission {
 interface Assignment {
   _id: string;
   title: string;
+  totalPoints: number;
 }
 
 interface Question {
   _id: string;
   questionText: string;
   questionNumber: number;
-  maxPoints: number;
+  pointsPercentage: number;
 }
 
 interface Answer {
@@ -30,16 +31,22 @@ interface Answer {
   questionId: string;
   answerText: string;
   selectedRubricId?: string;
+  selectedLevelIndex?: number;
   feedback?: string;
-  pointsAwarded?: number;
+  pointsPercentage?: number;
+}
+
+interface RubricLevel {
+  name: string;
+  description: string;
+  percentage: number;
 }
 
 interface Rubric {
   _id: string;
   questionId: string;
-  criteria: string;
-  points: number;
-  description: string;
+  criteriaName: string;
+  levels: RubricLevel[];
 }
 
 export default function GradingPage() {
@@ -53,10 +60,24 @@ export default function GradingPage() {
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [rubrics, setRubrics] = useState<{ [questionId: string]: Rubric[] }>({});
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+
+  // Local state for editing
+  const [localAnswers, setLocalAnswers] = useState<{ [answerId: string]: Answer }>({});
 
   useEffect(() => {
     fetchData();
   }, [submissionId]);
+
+  useEffect(() => {
+    // Initialize local answers state
+    const localState: { [answerId: string]: Answer } = {};
+    answers.forEach((answer) => {
+      localState[answer._id!] = { ...answer };
+    });
+    setLocalAnswers(localState);
+  }, [answers]);
 
   const fetchData = async () => {
     try {
@@ -97,36 +118,81 @@ export default function GradingPage() {
     }
   };
 
-  const updateAnswer = async (answerId: string, updates: Partial<Answer>) => {
-    await fetch('/api/answers', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ _id: answerId, ...updates }),
+  const saveAllGrades = async () => {
+    setSaving(true);
+    setSaveMessage('');
+    
+    try {
+      // Save all modified answers
+      for (const answerId in localAnswers) {
+        const answer = localAnswers[answerId];
+        await fetch('/api/answers', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(answer),
+        });
+      }
+      
+      setSaveMessage('✓ Grades saved successfully!');
+      await fetchData(); // Refresh data
+      
+      setTimeout(() => setSaveMessage(''), 3000);
+    } catch (error) {
+      setSaveMessage('✗ Error saving grades');
+      console.error('Error saving grades:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectRubricLevel = (answerId: string, rubricId: string, levelIndex: number, percentage: number) => {
+    setLocalAnswers({
+      ...localAnswers,
+      [answerId]: {
+        ...localAnswers[answerId],
+        selectedRubricId: rubricId,
+        selectedLevelIndex: levelIndex,
+        pointsPercentage: percentage,
+      },
     });
-    fetchData();
   };
 
-  const selectRubric = (answer: Answer, rubric: Rubric) => {
-    updateAnswer(answer._id!, {
-      selectedRubricId: rubric._id,
-      pointsAwarded: rubric.points,
+  const updateFeedback = (answerId: string, feedback: string) => {
+    setLocalAnswers({
+      ...localAnswers,
+      [answerId]: {
+        ...localAnswers[answerId],
+        feedback,
+      },
     });
   };
 
-  const updateFeedback = (answer: Answer, feedback: string) => {
-    updateAnswer(answer._id!, { feedback });
+  const updatePercentage = (answerId: string, percentage: number) => {
+    setLocalAnswers({
+      ...localAnswers,
+      [answerId]: {
+        ...localAnswers[answerId],
+        pointsPercentage: percentage,
+        selectedRubricId: undefined,
+        selectedLevelIndex: undefined,
+      },
+    });
   };
 
-  const updatePoints = (answer: Answer, points: number) => {
-    updateAnswer(answer._id!, { pointsAwarded: points });
+  const getTotalPercentage = () => {
+    return Object.values(localAnswers).reduce((sum, answer) => {
+      const question = questions.find(q => q._id === answer.questionId);
+      if (!question) return sum;
+      
+      const questionMaxPercentage = question.pointsPercentage;
+      const earnedPercentage = ((answer.pointsPercentage || 0) / 100) * questionMaxPercentage;
+      return sum + earnedPercentage;
+    }, 0);
   };
 
   const getTotalPoints = () => {
-    return answers.reduce((sum, answer) => sum + (answer.pointsAwarded || 0), 0);
-  };
-
-  const getMaxTotalPoints = () => {
-    return questions.reduce((sum, question) => sum + question.maxPoints, 0);
+    if (!assignment) return 0;
+    return (getTotalPercentage() / 100) * assignment.totalPoints;
   };
 
   if (loading) {
@@ -170,17 +236,45 @@ export default function GradingPage() {
             </div>
             <div className="text-right">
               <p className="text-3xl font-bold text-indigo-600">
-                {getTotalPoints()} / {getMaxTotalPoints()}
+                {getTotalPoints().toFixed(2)} / {assignment.totalPoints}
               </p>
               <p className="text-gray-600 text-sm">Total Points</p>
+              <p className="text-lg text-indigo-600 mt-1">
+                {getTotalPercentage().toFixed(1)}%
+              </p>
             </div>
+          </div>
+
+          {/* Save Button */}
+          <div className="mt-6 flex items-center gap-4">
+            <button
+              onClick={saveAllGrades}
+              disabled={saving}
+              className={`px-8 py-3 rounded-lg font-semibold text-white transition-colors ${
+                saving
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700'
+              }`}
+            >
+              {saving ? 'Saving...' : '💾 Save All Grades'}
+            </button>
+            {saveMessage && (
+              <span
+                className={`font-semibold ${
+                  saveMessage.includes('✓') ? 'text-green-600' : 'text-red-600'
+                }`}
+              >
+                {saveMessage}
+              </span>
+            )}
           </div>
         </div>
 
         <div className="space-y-6">
           {questions.map((question) => {
-            const answer = answers.find((a) => a.questionId === question._id);
+            const answer = Object.values(localAnswers).find((a) => a.questionId === question._id);
             const questionRubrics = rubrics[question._id] || [];
+            const questionMaxPoints = (question.pointsPercentage / 100) * assignment.totalPoints;
 
             return (
               <div key={question._id} className="bg-white rounded-2xl shadow-xl p-8">
@@ -189,7 +283,9 @@ export default function GradingPage() {
                     Question {question.questionNumber}
                   </h2>
                   <p className="text-gray-700 mb-2">{question.questionText}</p>
-                  <p className="text-sm text-gray-600">Max Points: {question.maxPoints}</p>
+                  <p className="text-sm text-indigo-600 font-semibold">
+                    Worth: {question.pointsPercentage}% of total ({questionMaxPoints.toFixed(2)} points)
+                  </p>
                 </div>
 
                 {answer && (
@@ -200,34 +296,50 @@ export default function GradingPage() {
                     </div>
 
                     <div className="mb-6">
-                      <h3 className="font-semibold text-gray-800 mb-3">Select Rubric:</h3>
-                      <div className="grid grid-cols-1 gap-3">
+                      <h3 className="font-semibold text-gray-800 mb-3">Select Rubric Criteria & Level:</h3>
+                      <div className="space-y-4">
                         {questionRubrics.map((rubric) => (
-                          <button
-                            key={rubric._id}
-                            onClick={() => selectRubric(answer, rubric)}
-                            className={`p-4 rounded-lg border-2 text-left transition-all ${
-                              answer.selectedRubricId === rubric._id
-                                ? 'border-indigo-600 bg-indigo-50'
-                                : 'border-gray-200 hover:border-indigo-300 bg-white'
-                            }`}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <p className="font-semibold text-gray-800 mb-1">{rubric.criteria}</p>
-                                <p className="text-sm text-gray-600">{rubric.description}</p>
-                              </div>
-                              <span
-                                className={`px-3 py-1 rounded-full text-sm font-semibold ml-4 ${
-                                  answer.selectedRubricId === rubric._id
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}
-                              >
-                                {rubric.points} pts
-                              </span>
+                          <div key={rubric._id} className="border-2 border-gray-200 rounded-lg p-4">
+                            <h4 className="font-bold text-gray-800 mb-3">{rubric.criteriaName}</h4>
+                            <div className="grid grid-cols-1 gap-2">
+                              {rubric.levels.map((level, levelIdx) => {
+                                const isSelected =
+                                  answer.selectedRubricId === rubric._id &&
+                                  answer.selectedLevelIndex === levelIdx;
+                                
+                                return (
+                                  <button
+                                    key={levelIdx}
+                                    type="button"
+                                    onClick={() =>
+                                      selectRubricLevel(answer._id!, rubric._id!, levelIdx, level.percentage)
+                                    }
+                                    className={`p-3 rounded-lg border-2 text-left transition-all ${
+                                      isSelected
+                                        ? 'border-indigo-600 bg-indigo-50'
+                                        : 'border-gray-200 hover:border-indigo-300 bg-white'
+                                    }`}
+                                  >
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex-1">
+                                        <p className="font-semibold text-gray-800 mb-1">{level.name}</p>
+                                        <p className="text-sm text-gray-600">{level.description}</p>
+                                      </div>
+                                      <span
+                                        className={`px-3 py-1 rounded-full text-sm font-semibold ml-2 ${
+                                          isSelected
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'bg-gray-100 text-gray-800'
+                                        }`}
+                                      >
+                                        {level.percentage}%
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
                             </div>
-                          </button>
+                          </div>
                         ))}
                         {questionRubrics.length === 0 && (
                           <p className="text-gray-500 text-sm">No rubrics available for this question</p>
@@ -236,22 +348,30 @@ export default function GradingPage() {
                     </div>
 
                     <div className="mb-6">
-                      <h3 className="font-semibold text-gray-800 mb-2">Custom Points (Optional):</h3>
-                      <input
-                        type="number"
-                        value={answer.pointsAwarded || 0}
-                        onChange={(e) => updatePoints(answer, Number(e.target.value))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                        max={question.maxPoints}
-                        min={0}
-                      />
+                      <h3 className="font-semibold text-gray-800 mb-2">
+                        Custom Percentage (Optional - overrides rubric selection):
+                      </h3>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="number"
+                          value={answer.pointsPercentage || 0}
+                          onChange={(e) => updatePercentage(answer._id!, Number(e.target.value))}
+                          className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          max={100}
+                          min={0}
+                          step={0.1}
+                        />
+                        <span className="text-gray-700">
+                          % of question weight = {((answer.pointsPercentage || 0) / 100 * questionMaxPoints).toFixed(2)} points
+                        </span>
+                      </div>
                     </div>
 
                     <div className="mb-4">
                       <h3 className="font-semibold text-gray-800 mb-2">Feedback:</h3>
                       <textarea
                         value={answer.feedback || ''}
-                        onChange={(e) => updateFeedback(answer, e.target.value)}
+                        onChange={(e) => updateFeedback(answer._id!, e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                         rows={4}
                         placeholder="Provide feedback to the student..."
@@ -259,9 +379,9 @@ export default function GradingPage() {
                     </div>
 
                     <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
-                      <span className="font-semibold text-gray-800">Points Awarded:</span>
+                      <span className="font-semibold text-gray-800">Points for This Question:</span>
                       <span className="text-2xl font-bold text-indigo-600">
-                        {answer.pointsAwarded || 0} / {question.maxPoints}
+                        {((answer.pointsPercentage || 0) / 100 * questionMaxPoints).toFixed(2)} / {questionMaxPoints.toFixed(2)}
                       </span>
                     </div>
                   </>
@@ -276,23 +396,45 @@ export default function GradingPage() {
         </div>
 
         <div className="mt-8 bg-white rounded-2xl shadow-xl p-8">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center mb-6">
             <div>
-              <h2 className="text-2xl font-bold text-gray-800">Grading Complete</h2>
-              <p className="text-gray-600">All changes are saved automatically</p>
+              <h2 className="text-2xl font-bold text-gray-800">Summary</h2>
+              <p className="text-gray-600">Review and save your grading</p>
             </div>
             <div className="text-right">
               <p className="text-4xl font-bold text-indigo-600">
-                {getTotalPoints()} / {getMaxTotalPoints()}
+                {getTotalPoints().toFixed(2)} / {assignment.totalPoints}
               </p>
               <p className="text-gray-600">
-                {((getTotalPoints() / getMaxTotalPoints()) * 100).toFixed(1)}%
+                {getTotalPercentage().toFixed(1)}% overall
               </p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button
+              onClick={saveAllGrades}
+              disabled={saving}
+              className={`px-8 py-3 rounded-lg font-semibold text-white transition-colors ${
+                saving
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700'
+              }`}
+            >
+              {saving ? 'Saving...' : '💾 Save All Grades'}
+            </button>
+            {saveMessage && (
+              <span
+                className={`font-semibold ${
+                  saveMessage.includes('✓') ? 'text-green-600' : 'text-red-600'
+                }`}
+              >
+                {saveMessage}
+              </span>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
-

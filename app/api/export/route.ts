@@ -22,11 +22,14 @@ export async function GET(request: NextRequest) {
     // Build CSV header
     const headers = ['Student Name', 'Student Email', 'Submitted At'];
     for (const question of questions) {
+      const questionMaxPoints = (question.pointsPercentage / 100) * (assignment?.totalPoints || 100);
       headers.push(`Q${question.questionNumber} Answer`);
-      headers.push(`Q${question.questionNumber} Points`);
+      headers.push(`Q${question.questionNumber} Percentage`);
+      headers.push(`Q${question.questionNumber} Points (out of ${questionMaxPoints.toFixed(2)})`);
       headers.push(`Q${question.questionNumber} Feedback`);
     }
-    headers.push('Total Points');
+    headers.push('Total Percentage');
+    headers.push(`Total Points (out of ${assignment?.totalPoints || 100})`);
     
     // Build CSV rows
     const rows: string[][] = [];
@@ -38,7 +41,7 @@ export async function GET(request: NextRequest) {
         submission.submittedAt?.toISOString() || '',
       ];
       
-      let totalPoints = 0;
+      let totalPercentage = 0;
       
       for (const question of questions) {
         const answer = await Answer.findOne({
@@ -47,18 +50,27 @@ export async function GET(request: NextRequest) {
         });
         
         if (answer) {
+          const questionMaxPoints = (question.pointsPercentage / 100) * (assignment?.totalPoints || 100);
+          const earnedPercentage = ((answer.pointsPercentage || 0) / 100) * question.pointsPercentage;
+          const earnedPoints = ((answer.pointsPercentage || 0) / 100) * questionMaxPoints;
+          
+          totalPercentage += earnedPercentage;
+          
           row.push(`"${answer.answerText.replace(/"/g, '""')}"`);
-          row.push(answer.pointsAwarded?.toString() || '0');
+          row.push((answer.pointsPercentage || 0).toFixed(2) + '%');
+          row.push(earnedPoints.toFixed(2));
           row.push(`"${(answer.feedback || '').replace(/"/g, '""')}"`);
-          totalPoints += answer.pointsAwarded || 0;
         } else {
           row.push('');
+          row.push('0%');
           row.push('0');
           row.push('');
         }
       }
       
-      row.push(totalPoints.toString());
+      const totalPoints = (totalPercentage / 100) * (assignment?.totalPoints || 100);
+      row.push(totalPercentage.toFixed(2) + '%');
+      row.push(totalPoints.toFixed(2));
       rows.push(row);
     }
     
@@ -75,4 +87,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to export data' }, { status: 500 });
   }
 }
-

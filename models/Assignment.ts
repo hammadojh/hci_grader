@@ -4,6 +4,7 @@ export interface IAssignment {
   _id?: string;
   title: string;
   description: string;
+  totalPoints: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -17,6 +18,11 @@ const AssignmentSchema = new Schema<IAssignment>(
     description: {
       type: String,
       required: true,
+    },
+    totalPoints: {
+      type: Number,
+      required: true,
+      default: 100,
     },
   },
   {

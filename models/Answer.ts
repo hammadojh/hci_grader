@@ -6,8 +6,9 @@ export interface IAnswer {
   questionId: string;
   answerText: string;
   selectedRubricId?: string;
+  selectedLevelIndex?: number;
   feedback?: string;
-  pointsAwarded?: number;
+  pointsPercentage?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -33,13 +34,19 @@ const AnswerSchema = new Schema<IAnswer>(
       ref: 'Rubric',
       default: null,
     },
+    selectedLevelIndex: {
+      type: Number,
+      default: null,
+    },
     feedback: {
       type: String,
       default: '',
     },
-    pointsAwarded: {
+    pointsPercentage: {
       type: Number,
       default: 0,
+      min: 0,
+      max: 100,
     },
   },
   {

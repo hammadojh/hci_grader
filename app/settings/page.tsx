@@ -7,12 +7,14 @@ interface Settings {
     _id?: string;
     openaiApiKey: string;
     aiSystemPrompt: string;
+    gradingAgentPrompt: string;
 }
 
 export default function SettingsPage() {
     const [settings, setSettings] = useState<Settings | null>(null);
     const [openaiApiKey, setOpenaiApiKey] = useState('');
     const [aiSystemPrompt, setAiSystemPrompt] = useState('');
+    const [gradingAgentPrompt, setGradingAgentPrompt] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
@@ -28,6 +30,7 @@ export default function SettingsPage() {
             setSettings(data);
             setOpenaiApiKey(data.openaiApiKey || '');
             setAiSystemPrompt(data.aiSystemPrompt || '');
+            setGradingAgentPrompt(data.gradingAgentPrompt || '');
         } catch (error) {
             console.error('Failed to fetch settings:', error);
         }
@@ -45,6 +48,7 @@ export default function SettingsPage() {
                 body: JSON.stringify({
                     openaiApiKey,
                     aiSystemPrompt,
+                    gradingAgentPrompt,
                 }),
             });
 
@@ -82,6 +86,31 @@ For each criterion, provide:
 
 Always aim for rubrics that are practical, fair, and promote learning.`;
         setAiSystemPrompt(defaultPrompt);
+    };
+
+    const resetGradingAgentPrompt = () => {
+        const defaultPrompt = `You are an expert grading assistant. Your task is to evaluate a student's answer based on the provided rubrics.
+
+For each criteria in the rubric, you must select the most appropriate level based on the student's answer quality.
+
+You should:
+1. Carefully read the question and the student's answer
+2. Compare the answer against each rubric criteria
+3. Select the level that best matches the answer's quality for each criteria
+4. Consider all answers from other students for context (to calibrate your grading)
+
+Return your evaluation as a JSON object with the following structure:
+{
+  "suggestions": [
+    {
+      "rubricId": "rubric_id_here",
+      "suggestedLevelIndex": 0
+    }
+  ]
+}
+
+Be objective and consistent in your evaluation.`;
+        setGradingAgentPrompt(defaultPrompt);
     };
 
     return (
@@ -139,10 +168,10 @@ Always aim for rubrics that are practical, fair, and promote learning.`;
                             </div>
                         </div>
 
-                        {/* AI System Prompt Section */}
+                        {/* AI Rubric Helper System Prompt Section */}
                         <div className="mb-8">
                             <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-2xl font-bold text-gray-800">AI Agent System Prompt</h2>
+                                <h2 className="text-2xl font-bold text-gray-800">AI Rubric Helper System Prompt</h2>
                                 <button
                                     type="button"
                                     onClick={resetSystemPrompt}
@@ -154,18 +183,49 @@ Always aim for rubrics that are practical, fair, and promote learning.`;
 
                             <div className="mb-4">
                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                    System Prompt
+                                    Rubric Generation Prompt
                                 </label>
                                 <textarea
                                     value={aiSystemPrompt}
                                     onChange={(e) => setAiSystemPrompt(e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
-                                    rows={15}
+                                    rows={12}
                                     placeholder="Enter the system prompt for the AI rubric helper..."
                                     required
                                 />
                                 <p className="text-sm text-gray-500 mt-2">
-                                    This prompt guides how the AI generates rubric suggestions. Customize it to match your grading philosophy and requirements.
+                                    This prompt guides how the AI generates rubric suggestions when you use the AI Helper feature.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Grading Agent System Prompt Section */}
+                        <div className="mb-8">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-2xl font-bold text-gray-800">Grading Agent System Prompt</h2>
+                                <button
+                                    type="button"
+                                    onClick={resetGradingAgentPrompt}
+                                    className="text-sm text-indigo-600 hover:text-indigo-800 font-semibold"
+                                >
+                                    Reset to Default
+                                </button>
+                            </div>
+
+                            <div className="mb-4">
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                    Agent Evaluation Prompt
+                                </label>
+                                <textarea
+                                    value={gradingAgentPrompt}
+                                    onChange={(e) => setGradingAgentPrompt(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
+                                    rows={12}
+                                    placeholder="Enter the system prompt for grading agents..."
+                                    required
+                                />
+                                <p className="text-sm text-gray-500 mt-2">
+                                    This prompt guides how grading agents (g1, g2, g3) evaluate student answers and suggest rubric levels.
                                 </p>
                             </div>
                         </div>

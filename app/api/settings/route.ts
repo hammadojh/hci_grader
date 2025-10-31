@@ -7,6 +7,28 @@ export async function GET() {
         await connectDB();
         let settings = await Settings.findOne();
 
+        const defaultGradingAgentPrompt = `You are an expert grading assistant. Your task is to evaluate a student's answer based on the provided rubrics.
+
+For each criteria in the rubric, you must select the most appropriate level based on the student's answer quality.
+
+You should:
+1. Carefully read the question and the student's answer
+2. Compare the answer against each rubric criteria
+3. Select the level that best matches the answer's quality for each criteria
+4. Consider all answers from other students for context (to calibrate your grading)
+
+Return your evaluation as a JSON object with the following structure:
+{
+  "suggestions": [
+    {
+      "rubricId": "rubric_id_here",
+      "suggestedLevelIndex": 0
+    }
+  ]
+}
+
+Be objective and consistent in your evaluation.`;
+
         // If no settings exist, create default settings
         if (!settings) {
             settings = await Settings.create({
@@ -28,7 +50,14 @@ For each criterion, provide:
 - Percentage weights that reflect the relative importance
 
 Always aim for rubrics that are practical, fair, and promote learning.`,
+                gradingAgentPrompt: defaultGradingAgentPrompt,
             });
+        } else {
+            // Ensure gradingAgentPrompt exists (for existing settings documents)
+            if (!settings.gradingAgentPrompt) {
+                settings.gradingAgentPrompt = defaultGradingAgentPrompt;
+                await settings.save();
+            }
         }
 
         return NextResponse.json(settings);
@@ -50,6 +79,9 @@ export async function POST(request: NextRequest) {
             // Update existing settings
             existingSettings.openaiApiKey = body.openaiApiKey;
             existingSettings.aiSystemPrompt = body.aiSystemPrompt;
+            if (body.gradingAgentPrompt) {
+                existingSettings.gradingAgentPrompt = body.gradingAgentPrompt;
+            }
             await existingSettings.save();
             return NextResponse.json(existingSettings);
         } else {
@@ -75,6 +107,9 @@ export async function PUT(request: NextRequest) {
 
         settings.openaiApiKey = body.openaiApiKey;
         settings.aiSystemPrompt = body.aiSystemPrompt;
+        if (body.gradingAgentPrompt) {
+            settings.gradingAgentPrompt = body.gradingAgentPrompt;
+        }
         await settings.save();
 
         return NextResponse.json(settings);

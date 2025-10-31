@@ -30,8 +30,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build a comprehensive prompt for the AI
-    const systemPrompt = `You are an expert grading assistant. Your task is to evaluate a student's answer based on the provided rubrics.
+    // Use the custom grading agent prompt from settings, or default if not set
+    const systemPrompt = settings.gradingAgentPrompt || `You are an expert grading assistant. Your task is to evaluate a student's answer based on the provided rubrics.
 
 For each criteria in the rubric, you must select the most appropriate level based on the student's answer quality.
 

@@ -79,6 +79,24 @@ export default function AssignmentDetail() {
   const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; content: string }>>([]);
   const [aiError, setAiError] = useState('');
 
+  // PDF Upload state
+  const [showPDFUpload, setShowPDFUpload] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [pastedText, setPastedText] = useState('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedQuestions, setExtractedQuestions] = useState<Array<{
+    questionText: string;
+    questionNumber: number;
+    pointsPercentage: number;
+    rubrics: Array<{
+      criteriaName: string;
+      levels: RubricLevel[];
+    }>;
+  }>>([]);
+  const [extractionSummary, setExtractionSummary] = useState('');
+  const [extractionError, setExtractionError] = useState('');
+
   // Submission form state
   const [showSubmissionForm, setShowSubmissionForm] = useState(false);
   const [studentName, setStudentName] = useState('');
@@ -456,6 +474,180 @@ export default function AssignmentDetail() {
     }));
   };
 
+  // PDF Upload functions
+  const openPDFUpload = () => {
+    setShowPDFUpload(true);
+    setUploadMode('file');
+    setSelectedFile(null);
+    setPastedText('');
+    setExtractedQuestions([]);
+    setExtractionSummary('');
+    setExtractionError('');
+  };
+
+  const closePDFUpload = () => {
+    setShowPDFUpload(false);
+    setUploadMode('file');
+    setSelectedFile(null);
+    setPastedText('');
+    setExtractedQuestions([]);
+    setExtractionSummary('');
+    setExtractionError('');
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const isValid = file.type === 'application/pdf' || 
+                     file.name.endsWith('.md') || 
+                     file.name.endsWith('.markdown');
+      if (isValid) {
+        setSelectedFile(file);
+        setExtractionError('');
+      } else {
+        setExtractionError('Please select a valid PDF or Markdown (.md) file');
+        setSelectedFile(null);
+      }
+    }
+  };
+
+  const extractFromInput = async () => {
+    if (uploadMode === 'file' && !selectedFile) return;
+    if (uploadMode === 'text' && !pastedText.trim()) {
+      setExtractionError('Please enter some text');
+      return;
+    }
+
+    setIsExtracting(true);
+    setExtractionError('');
+
+    try {
+      let response;
+
+      if (uploadMode === 'text') {
+        // Send pasted text as JSON
+        response = await fetch('/api/extract-exam', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: pastedText }),
+        });
+      } else {
+        // Send file as FormData
+        const formData = new FormData();
+        formData.append('file', selectedFile!);
+
+        response = await fetch('/api/extract-exam', {
+          method: 'POST',
+          body: formData,
+        });
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setExtractionError(data.error || 'Failed to extract exam data');
+        return;
+      }
+
+      setExtractedQuestions(data.questions || []);
+      setExtractionSummary(data.summary || 'Exam extracted successfully');
+    } catch (error) {
+      console.error('Extraction error:', error);
+      setExtractionError('Failed to extract exam data. Please try again.');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const editExtractedQuestion = (index: number, field: string, value: string | number) => {
+    const updated = [...extractedQuestions];
+    if (field === 'questionText') {
+      updated[index].questionText = value as string;
+    } else if (field === 'pointsPercentage') {
+      updated[index].pointsPercentage = value as number;
+    }
+    setExtractedQuestions(updated);
+  };
+
+  const editExtractedRubric = (
+    questionIndex: number,
+    rubricIndex: number,
+    field: string,
+    value: string | number,
+    levelIndex?: number
+  ) => {
+    const updated = [...extractedQuestions];
+    const rubric = updated[questionIndex].rubrics[rubricIndex];
+
+    if (levelIndex !== undefined) {
+      // Editing a level field
+      const level = rubric.levels[levelIndex];
+      if (field === 'name' || field === 'description') {
+        level[field] = value as string;
+      } else if (field === 'percentage') {
+        level.percentage = value as number;
+      }
+    } else {
+      // Editing rubric criteria name
+      if (field === 'criteriaName') {
+        rubric.criteriaName = value as string;
+      }
+    }
+    setExtractedQuestions(updated);
+  };
+
+  const removeExtractedQuestion = (index: number) => {
+    setExtractedQuestions(extractedQuestions.filter((_, i) => i !== index));
+  };
+
+  const removeExtractedRubric = (questionIndex: number, rubricIndex: number) => {
+    const updated = [...extractedQuestions];
+    updated[questionIndex].rubrics = updated[questionIndex].rubrics.filter((_, i) => i !== rubricIndex);
+    setExtractedQuestions(updated);
+  };
+
+  const approveExtractedData = async () => {
+    if (extractedQuestions.length === 0) return;
+
+    try {
+      // Create all questions first
+      for (const extractedQ of extractedQuestions) {
+        const questionRes = await fetch('/api/questions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assignmentId,
+            questionText: extractedQ.questionText,
+            questionNumber: extractedQ.questionNumber,
+            pointsPercentage: extractedQ.pointsPercentage,
+          }),
+        });
+
+        const createdQuestion = await questionRes.json();
+
+        // Create rubrics for this question
+        for (const rubric of extractedQ.rubrics) {
+          await fetch('/api/rubrics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              questionId: createdQuestion._id,
+              criteriaName: rubric.criteriaName,
+              levels: rubric.levels,
+            }),
+          });
+        }
+      }
+
+      // Refresh questions and close modal
+      await fetchQuestions();
+      closePDFUpload();
+    } catch (error) {
+      console.error('Failed to save extracted data:', error);
+      setExtractionError('Failed to save questions and rubrics. Please try again.');
+    }
+  };
+
   if (!assignment) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8 flex items-center justify-center">
@@ -527,19 +719,27 @@ export default function AssignmentDetail() {
                     )}
                   </p>
                 </div>
-                <button
-                  onClick={() => {
-                    if (showQuestionForm && !editingQuestion) {
-                      cancelQuestionEdit();
-                    } else {
-                      setShowQuestionForm(!showQuestionForm);
-                      setEditingQuestion(null);
-                    }
-                  }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
-                >
-                  {showQuestionForm && !editingQuestion ? 'Cancel' : '+ Add Question'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={openPDFUpload}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                  >
+                    📄 Upload Exam using AI
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (showQuestionForm && !editingQuestion) {
+                        cancelQuestionEdit();
+                      } else {
+                        setShowQuestionForm(!showQuestionForm);
+                        setEditingQuestion(null);
+                      }
+                    }}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                  >
+                    {showQuestionForm && !editingQuestion ? 'Cancel' : '+ Add Question'}
+                  </button>
+                </div>
               </div>
 
               {showQuestionForm && (
@@ -922,6 +1122,319 @@ export default function AssignmentDetail() {
             </div>
           )}
         </div>
+
+        {/* PDF Upload Modal */}
+        {showPDFUpload && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-800">📄 Upload Exam using AI</h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Upload a PDF exam and let AI extract questions and rubrics automatically
+                    </p>
+                  </div>
+                  <button
+                    onClick={closePDFUpload}
+                    className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                {/* Mode Selection Tabs */}
+                {extractedQuestions.length === 0 && (
+                  <>
+                    <div className="flex border-b border-gray-200 mb-6">
+                      <button
+                        onClick={() => {
+                          setUploadMode('file');
+                          setPastedText('');
+                          setExtractionError('');
+                        }}
+                        className={`px-6 py-3 font-semibold transition-colors ${uploadMode === 'file'
+                          ? 'border-b-2 border-purple-600 text-purple-600'
+                          : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        📁 Upload File
+                      </button>
+                      <button
+                        onClick={() => {
+                          setUploadMode('text');
+                          setSelectedFile(null);
+                          setExtractionError('');
+                        }}
+                        className={`px-6 py-3 font-semibold transition-colors ${uploadMode === 'text'
+                          ? 'border-b-2 border-purple-600 text-purple-600'
+                          : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        📝 Paste Text
+                      </button>
+                    </div>
+
+                    {/* File Upload Section */}
+                    {uploadMode === 'file' && (
+                      <div className="mb-6">
+                        <label className="block text-sm font-semibold text-gray-700 mb-3">
+                          Select PDF or Markdown File
+                        </label>
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-purple-500 transition-colors">
+                          <input
+                            type="file"
+                            accept="application/pdf,.md,.markdown"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                            id="file-upload"
+                          />
+                          <label
+                            htmlFor="file-upload"
+                            className="cursor-pointer"
+                          >
+                            <div className="text-6xl mb-3">📄</div>
+                            <p className="text-gray-700 font-semibold mb-2">
+                              {selectedFile ? selectedFile.name : 'Click to select a file'}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              Supported: PDF (.pdf) and Markdown (.md) files
+                            </p>
+                          </label>
+                        </div>
+
+                        {selectedFile && (
+                          <div className="mt-4">
+                            <button
+                              onClick={extractFromInput}
+                              disabled={isExtracting}
+                              className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-8 py-3 rounded-lg font-semibold transition-colors w-full"
+                            >
+                              {isExtracting ? '🔄 Extracting... This may take a minute' : '🚀 Extract Questions & Rubrics'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Text Paste Section */}
+                    {uploadMode === 'text' && (
+                      <div className="mb-6">
+                        <label className="block text-sm font-semibold text-gray-700 mb-3">
+                          Paste Exam Content
+                        </label>
+                        <textarea
+                          value={pastedText}
+                          onChange={(e) => setPastedText(e.target.value)}
+                          className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                          rows={12}
+                          placeholder="Paste your exam content here...
+
+Example:
+Question 1: What is UX design? (25 points)
+Answer should demonstrate understanding of user experience principles.
+
+Question 2: Describe the design thinking process. (25 points)
+Include all stages and explain each one.
+..."
+                        />
+                        <p className="text-sm text-gray-500 mt-2">
+                          Tip: Include question numbers, text, and point values for best results
+                        </p>
+
+                        {pastedText.trim() && (
+                          <div className="mt-4">
+                            <button
+                              onClick={extractFromInput}
+                              disabled={isExtracting}
+                              className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-8 py-3 rounded-lg font-semibold transition-colors w-full"
+                            >
+                              {isExtracting ? '🔄 Extracting... This may take a minute' : '🚀 Extract Questions & Rubrics'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Error Message */}
+                {extractionError && (
+                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-red-800 text-sm">{extractionError}</p>
+                    {extractionError.includes('API key') && (
+                      <Link
+                        href="/settings"
+                        className="text-red-600 hover:text-red-800 text-sm underline mt-2 inline-block"
+                      >
+                        Go to Settings
+                      </Link>
+                    )}
+                  </div>
+                )}
+
+                {/* Extraction Summary */}
+                {extractionSummary && extractedQuestions.length > 0 && (
+                  <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                    <h3 className="font-semibold text-purple-900 mb-2">✨ Extraction Complete</h3>
+                    <p className="text-purple-800 text-sm">{extractionSummary}</p>
+                    <p className="text-purple-700 text-sm mt-2">
+                      Found {extractedQuestions.length} question(s). Review and edit them below before confirming.
+                    </p>
+                  </div>
+                )}
+
+                {/* Extracted Questions - Editable */}
+                {extractedQuestions.length > 0 && (
+                  <div>
+                    <div className="mb-4">
+                      <h3 className="text-xl font-bold text-gray-800">Review & Edit Extracted Questions</h3>
+                      <p className="text-sm text-gray-600">You can edit any field before confirming</p>
+                    </div>
+
+                    <div className="space-y-6 mb-6">
+                      {extractedQuestions.map((question, qIndex) => (
+                        <div key={qIndex} className="border border-gray-200 rounded-lg p-5 bg-gray-50">
+                          <div className="flex justify-between items-start mb-4">
+                            <h4 className="text-lg font-bold text-gray-900">
+                              Question {question.questionNumber}
+                            </h4>
+                            <button
+                              onClick={() => removeExtractedQuestion(qIndex)}
+                              className="text-red-600 hover:text-red-800 font-semibold text-sm"
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          {/* Question Text */}
+                          <div className="mb-3">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Question Text
+                            </label>
+                            <textarea
+                              value={question.questionText}
+                              onChange={(e) => editExtractedQuestion(qIndex, 'questionText', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                              rows={3}
+                            />
+                          </div>
+
+                          {/* Points Percentage */}
+                          <div className="mb-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Points Percentage (% of total)
+                            </label>
+                            <input
+                              type="number"
+                              value={question.pointsPercentage}
+                              onChange={(e) => editExtractedQuestion(qIndex, 'pointsPercentage', Number(e.target.value))}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                              min={0}
+                              max={100}
+                              step={0.1}
+                            />
+                          </div>
+
+                          {/* Rubrics */}
+                          <div className="mt-4">
+                            <h5 className="font-semibold text-gray-800 mb-3">
+                              Rubrics ({question.rubrics.length})
+                            </h5>
+                            <div className="space-y-4">
+                              {question.rubrics.map((rubric, rIndex) => (
+                                <div key={rIndex} className="bg-white p-4 rounded-lg border border-gray-200">
+                                  <div className="flex justify-between items-start mb-3">
+                                    <div className="flex-1">
+                                      <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                        Criteria Name
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={rubric.criteriaName}
+                                        onChange={(e) => editExtractedRubric(qIndex, rIndex, 'criteriaName', e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-purple-500"
+                                      />
+                                    </div>
+                                    <button
+                                      onClick={() => removeExtractedRubric(qIndex, rIndex)}
+                                      className="ml-3 text-red-600 hover:text-red-800 text-sm font-semibold"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                      Performance Levels
+                                    </label>
+                                    {rubric.levels.map((level, lIndex) => (
+                                      <div key={lIndex} className="bg-gray-50 p-3 rounded border border-gray-200">
+                                        <div className="grid grid-cols-2 gap-2 mb-2">
+                                          <div>
+                                            <label className="block text-xs text-gray-600 mb-1">Level Name</label>
+                                            <input
+                                              type="text"
+                                              value={level.name}
+                                              onChange={(e) => editExtractedRubric(qIndex, rIndex, 'name', e.target.value, lIndex)}
+                                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-purple-500"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs text-gray-600 mb-1">Percentage</label>
+                                            <input
+                                              type="number"
+                                              value={level.percentage}
+                                              onChange={(e) => editExtractedRubric(qIndex, rIndex, 'percentage', Number(e.target.value), lIndex)}
+                                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-purple-500"
+                                              min={0}
+                                              max={100}
+                                            />
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs text-gray-600 mb-1">Description</label>
+                                          <textarea
+                                            value={level.description}
+                                            onChange={(e) => editExtractedRubric(qIndex, rIndex, 'description', e.target.value, lIndex)}
+                                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-purple-500"
+                                            rows={2}
+                                          />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-3">
+                      <button
+                        onClick={closePDFUpload}
+                        className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={approveExtractedData}
+                        className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                      >
+                        ✓ Confirm & Add All Questions
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* AI Rubric Helper Modal */}
         {showAIHelper && (

@@ -51,11 +51,13 @@ export default function AssignmentDetail() {
 
   // Question form state
   const [showQuestionForm, setShowQuestionForm] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [questionText, setQuestionText] = useState('');
   const [pointsPercentage, setPointsPercentage] = useState(0);
 
   // Rubric form state
   const [selectedQuestionForRubric, setSelectedQuestionForRubric] = useState<string | null>(null);
+  const [editingRubric, setEditingRubric] = useState<Rubric | null>(null);
   const [rubrics, setRubrics] = useState<{ [questionId: string]: Rubric[] }>({});
   const [rubricCriteriaName, setRubricCriteriaName] = useState('');
   const [rubricLevels, setRubricLevels] = useState<RubricLevel[]>([
@@ -106,23 +108,57 @@ export default function AssignmentDetail() {
     return questions.reduce((sum, q) => sum + q.pointsPercentage, 0);
   };
 
-  const createQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const questionNumber = questions.length + 1;
-    await fetch('/api/questions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assignmentId,
-        questionText,
-        questionNumber,
-        pointsPercentage,
-      }),
-    });
+  const startEditQuestion = (question: Question) => {
+    setEditingQuestion(question);
+    setQuestionText(question.questionText);
+    setPointsPercentage(question.pointsPercentage);
+    setShowQuestionForm(true);
+  };
+
+  const cancelQuestionEdit = () => {
+    setEditingQuestion(null);
     setQuestionText('');
     setPointsPercentage(0);
     setShowQuestionForm(false);
+  };
+
+  const createOrUpdateQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (editingQuestion) {
+      // Update existing question
+      await fetch(`/api/questions/${editingQuestion._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionText,
+          pointsPercentage,
+        }),
+      });
+    } else {
+      // Create new question
+      const questionNumber = questions.length + 1;
+      await fetch('/api/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentId,
+          questionText,
+          questionNumber,
+          pointsPercentage,
+        }),
+      });
+    }
+    
+    cancelQuestionEdit();
     fetchQuestions();
+  };
+
+  const deleteQuestion = async (questionId: string) => {
+    if (confirm('Are you sure you want to delete this question? This will also delete all associated rubrics.')) {
+      await fetch(`/api/questions/${questionId}`, { method: 'DELETE' });
+      fetchQuestions();
+    }
   };
 
   const addRubricLevel = () => {
@@ -141,29 +177,61 @@ export default function AssignmentDetail() {
     setRubricLevels(updated);
   };
 
-  const createRubric = async (e: React.FormEvent) => {
+  const startEditRubric = (rubric: Rubric) => {
+    setEditingRubric(rubric);
+    setSelectedQuestionForRubric(rubric.questionId);
+    setRubricCriteriaName(rubric.criteriaName);
+    setRubricLevels(rubric.levels);
+  };
+
+  const cancelRubricEdit = () => {
+    setEditingRubric(null);
+    setSelectedQuestionForRubric(null);
+    setRubricCriteriaName('');
+    setRubricLevels([{ name: '', description: '', percentage: 0 }]);
+  };
+
+  const createOrUpdateRubric = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedQuestionForRubric) return;
 
-    await fetch('/api/rubrics', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        questionId: selectedQuestionForRubric,
-        criteriaName: rubricCriteriaName,
-        levels: rubricLevels,
-      }),
-    });
-    setRubricCriteriaName('');
-    setRubricLevels([{ name: '', description: '', percentage: 0 }]);
+    if (editingRubric) {
+      // Update existing rubric
+      await fetch(`/api/rubrics/${editingRubric._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          criteriaName: rubricCriteriaName,
+          levels: rubricLevels,
+        }),
+      });
+    } else {
+      // Create new rubric
+      await fetch('/api/rubrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionId: selectedQuestionForRubric,
+          criteriaName: rubricCriteriaName,
+          levels: rubricLevels,
+        }),
+      });
+    }
+    
     fetchRubrics(selectedQuestionForRubric);
-    setSelectedQuestionForRubric(null);
+    cancelRubricEdit();
+  };
+
+  const deleteRubric = async (rubricId: string, questionId: string) => {
+    if (confirm('Are you sure you want to delete this rubric?')) {
+      await fetch(`/api/rubrics/${rubricId}`, { method: 'DELETE' });
+      fetchRubrics(questionId);
+    }
   };
 
   const createSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Create submission
     const submissionRes = await fetch('/api/submissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -175,7 +243,6 @@ export default function AssignmentDetail() {
     });
     const submission = await submissionRes.json();
 
-    // Create answers for each question
     for (const question of questions) {
       await fetch('/api/answers', {
         method: 'POST',
@@ -265,15 +332,25 @@ export default function AssignmentDetail() {
                   </p>
                 </div>
                 <button
-                  onClick={() => setShowQuestionForm(!showQuestionForm)}
+                  onClick={() => {
+                    if (showQuestionForm && !editingQuestion) {
+                      cancelQuestionEdit();
+                    } else {
+                      setShowQuestionForm(!showQuestionForm);
+                      setEditingQuestion(null);
+                    }
+                  }}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
                 >
-                  {showQuestionForm ? 'Cancel' : '+ Add Question'}
+                  {showQuestionForm && !editingQuestion ? 'Cancel' : '+ Add Question'}
                 </button>
               </div>
 
               {showQuestionForm && (
-                <form onSubmit={createQuestion} className="mb-8 p-6 bg-gray-50 rounded-xl">
+                <form onSubmit={createOrUpdateQuestion} className="mb-8 p-6 bg-gray-50 rounded-xl">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                    {editingQuestion ? 'Edit Question' : 'Add New Question'}
+                  </h3>
                   <div className="mb-4">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Question Text
@@ -304,12 +381,21 @@ export default function AssignmentDetail() {
                       This question will be worth {((pointsPercentage / 100) * assignment.totalPoints).toFixed(2)} points
                     </p>
                   </div>
-                  <button
-                    type="submit"
-                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
-                  >
-                    Add Question
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                    >
+                      {editingQuestion ? 'Update Question' : 'Add Question'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelQuestionEdit}
+                      className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </form>
               )}
 
@@ -317,9 +403,25 @@ export default function AssignmentDetail() {
                 {questions.map((question) => (
                   <div key={question._id} className="border border-gray-200 rounded-xl p-6">
                     <div className="mb-4">
-                      <h3 className="text-lg font-bold text-gray-800 mb-2">
-                        Question {question.questionNumber}
-                      </h3>
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-lg font-bold text-gray-800">
+                          Question {question.questionNumber}
+                        </h3>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => startEditQuestion(question)}
+                            className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-semibold transition-colors"
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            onClick={() => deleteQuestion(question._id)}
+                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-semibold transition-colors"
+                          >
+                            🗑️ Delete
+                          </button>
+                        </div>
+                      </div>
                       <p className="text-gray-700 mb-2">{question.questionText}</p>
                       <p className="text-sm text-indigo-600 font-semibold">
                         {question.pointsPercentage}% ({((question.pointsPercentage / 100) * assignment.totalPoints).toFixed(2)} points)
@@ -330,15 +432,23 @@ export default function AssignmentDetail() {
                       <div className="flex justify-between items-center mb-3">
                         <h4 className="font-semibold text-gray-700">Rubrics</h4>
                         <button
-                          onClick={() => setSelectedQuestionForRubric(question._id)}
+                          onClick={() => {
+                            setSelectedQuestionForRubric(question._id);
+                            setEditingRubric(null);
+                            setRubricCriteriaName('');
+                            setRubricLevels([{ name: '', description: '', percentage: 0 }]);
+                          }}
                           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 rounded-lg text-sm font-semibold transition-colors"
                         >
                           + Add Rubric
                         </button>
                       </div>
 
-                      {selectedQuestionForRubric === question._id && (
-                        <form onSubmit={createRubric} className="mb-4 p-4 bg-blue-50 rounded-lg">
+                      {(selectedQuestionForRubric === question._id || editingRubric?.questionId === question._id) && (
+                        <form onSubmit={createOrUpdateRubric} className="mb-4 p-4 bg-blue-50 rounded-lg">
+                          <h4 className="font-semibold text-gray-800 mb-3">
+                            {editingRubric ? 'Edit Rubric' : 'Add New Rubric'}
+                          </h4>
                           <div className="mb-3">
                             <label className="block text-sm font-semibold text-gray-700 mb-1">
                               Criteria Name
@@ -417,15 +527,11 @@ export default function AssignmentDetail() {
                               type="submit"
                               className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
                             >
-                              Add Rubric
+                              {editingRubric ? 'Update Rubric' : 'Add Rubric'}
                             </button>
                             <button
                               type="button"
-                              onClick={() => {
-                                setSelectedQuestionForRubric(null);
-                                setRubricCriteriaName('');
-                                setRubricLevels([{ name: '', description: '', percentage: 0 }]);
-                              }}
+                              onClick={cancelRubricEdit}
                               className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
                             >
                               Cancel
@@ -440,7 +546,23 @@ export default function AssignmentDetail() {
                             key={rubric._id}
                             className="bg-gray-50 p-4 rounded-lg"
                           >
-                            <h5 className="font-bold text-gray-800 mb-2">{rubric.criteriaName}</h5>
+                            <div className="flex justify-between items-start mb-2">
+                              <h5 className="font-bold text-gray-800">{rubric.criteriaName}</h5>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => startEditRubric(rubric)}
+                                  className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs font-semibold transition-colors"
+                                >
+                                  ✏️ Edit
+                                </button>
+                                <button
+                                  onClick={() => deleteRubric(rubric._id!, question._id)}
+                                  className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold transition-colors"
+                                >
+                                  🗑️ Delete
+                                </button>
+                              </div>
+                            </div>
                             <div className="space-y-2">
                               {rubric.levels.map((level, idx) => (
                                 <div key={idx} className="bg-white p-3 rounded border border-gray-200">

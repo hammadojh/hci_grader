@@ -1,17 +1,37 @@
 import mongoose, { Schema, model, models } from 'mongoose';
 
+export interface ICriteriaEvaluation {
+  rubricId: string;
+  selectedLevelIndex: number;
+  feedback: string;
+}
+
 export interface IAnswer {
   _id?: string;
   submissionId: string;
   questionId: string;
   answerText: string;
-  selectedRubricId?: string;
-  selectedLevelIndex?: number;
-  feedback?: string;
+  criteriaEvaluations: ICriteriaEvaluation[];
   pointsPercentage?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+const CriteriaEvaluationSchema = new Schema<ICriteriaEvaluation>({
+  rubricId: {
+    type: String,
+    required: true,
+    ref: 'Rubric',
+  },
+  selectedLevelIndex: {
+    type: Number,
+    required: true,
+  },
+  feedback: {
+    type: String,
+    default: '',
+  },
+}, { _id: false });
 
 const AnswerSchema = new Schema<IAnswer>(
   {
@@ -29,18 +49,9 @@ const AnswerSchema = new Schema<IAnswer>(
       type: String,
       required: true,
     },
-    selectedRubricId: {
-      type: String,
-      ref: 'Rubric',
-      default: null,
-    },
-    selectedLevelIndex: {
-      type: Number,
-      default: null,
-    },
-    feedback: {
-      type: String,
-      default: '',
+    criteriaEvaluations: {
+      type: [CriteriaEvaluationSchema],
+      default: [],
     },
     pointsPercentage: {
       type: Number,

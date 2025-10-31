@@ -21,13 +21,24 @@ export async function GET(request: NextRequest) {
     
     // Build CSV header
     const headers = ['Student Name', 'Student Email', 'Submitted At'];
+    
     for (const question of questions) {
       const questionMaxPoints = (question.pointsPercentage / 100) * (assignment?.totalPoints || 100);
+      const rubrics = await Rubric.find({ questionId: question._id });
+      
       headers.push(`Q${question.questionNumber} Answer`);
-      headers.push(`Q${question.questionNumber} Percentage`);
+      
+      // Add headers for each criteria
+      for (const rubric of rubrics) {
+        headers.push(`Q${question.questionNumber} - ${rubric.criteriaName} Level`);
+        headers.push(`Q${question.questionNumber} - ${rubric.criteriaName} Percentage`);
+        headers.push(`Q${question.questionNumber} - ${rubric.criteriaName} Feedback`);
+      }
+      
+      headers.push(`Q${question.questionNumber} Average Percentage`);
       headers.push(`Q${question.questionNumber} Points (out of ${questionMaxPoints.toFixed(2)})`);
-      headers.push(`Q${question.questionNumber} Feedback`);
     }
+    
     headers.push('Total Percentage');
     headers.push(`Total Points (out of ${assignment?.totalPoints || 100})`);
     
@@ -49,6 +60,8 @@ export async function GET(request: NextRequest) {
           questionId: question._id?.toString(),
         });
         
+        const rubrics = await Rubric.find({ questionId: question._id });
+        
         if (answer) {
           const questionMaxPoints = (question.pointsPercentage / 100) * (assignment?.totalPoints || 100);
           const earnedPercentage = ((answer.pointsPercentage || 0) / 100) * question.pointsPercentage;
@@ -56,15 +69,42 @@ export async function GET(request: NextRequest) {
           
           totalPercentage += earnedPercentage;
           
+          // Add answer text
           row.push(`"${answer.answerText.replace(/"/g, '""')}"`);
+          
+          // Add criteria evaluations
+          for (const rubric of rubrics) {
+            const evaluation = answer.criteriaEvaluations.find(
+              (e: any) => e.rubricId === rubric._id?.toString()
+            );
+            
+            if (evaluation) {
+              const level = rubric.levels[evaluation.selectedLevelIndex];
+              row.push(level.name);
+              row.push(level.percentage + '%');
+              row.push(`"${(evaluation.feedback || '').replace(/"/g, '""')}"`);
+            } else {
+              row.push('Not evaluated');
+              row.push('0%');
+              row.push('');
+            }
+          }
+          
           row.push((answer.pointsPercentage || 0).toFixed(2) + '%');
           row.push(earnedPoints.toFixed(2));
-          row.push(`"${(answer.feedback || '').replace(/"/g, '""')}"`);
         } else {
+          // No answer
           row.push('');
+          
+          // Empty criteria evaluations
+          for (const rubric of rubrics) {
+            row.push('');
+            row.push('0%');
+            row.push('');
+          }
+          
           row.push('0%');
           row.push('0');
-          row.push('');
         }
       }
       
@@ -84,6 +124,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    console.error('Export error:', error);
     return NextResponse.json({ error: 'Failed to export data' }, { status: 500 });
   }
 }

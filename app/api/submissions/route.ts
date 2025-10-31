@@ -26,3 +26,25 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    await connectDB();
+    const body = await request.json();
+    const { _id, ...updateData } = body;
+    
+    const submission = await Submission.findByIdAndUpdate(
+      _id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+    
+    if (!submission) {
+      return NextResponse.json({ error: 'Submission not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json(submission);
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to update submission' }, { status: 500 });
+  }
+}
+

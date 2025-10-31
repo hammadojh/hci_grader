@@ -114,22 +114,22 @@ Be objective and consistent in your evaluation.`;
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-            <div className="max-w-4xl mx-auto">
-                <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-                    <Link href="/" className="text-indigo-600 hover:text-indigo-800 mb-4 inline-block">
+        <div className="min-h-screen bg-gray-50 p-8">
+            <div className="max-w-6xl mx-auto">
+                <div className="bg-white rounded-xl shadow-lg p-8 mb-6 border border-gray-200">
+                    <Link href="/" className="text-indigo-600 hover:text-indigo-700 mb-4 inline-block font-semibold">
                         ← Back to Home
                     </Link>
-                    <h1 className="text-4xl font-bold text-gray-800 mb-2">Settings</h1>
+                    <h1 className="text-4xl font-bold text-gray-900 mb-2">Settings</h1>
                     <p className="text-gray-600">Configure AI Rubric Helper and other preferences</p>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-xl p-8">
+                <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-200">
                     <form onSubmit={saveSettings}>
                         {/* OpenAI API Key Section */}
-                        <div className="mb-8">
+                        <div className="mb-6">
                             <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-2xl font-bold text-gray-800">OpenAI API Configuration</h2>
+                                <h2 className="text-2xl font-bold text-gray-900">OpenAI API Configuration</h2>
                                 <a
                                     href="https://platform.openai.com/api-keys"
                                     target="_blank"
@@ -169,9 +169,9 @@ Be objective and consistent in your evaluation.`;
                         </div>
 
                         {/* AI Rubric Helper System Prompt Section */}
-                        <div className="mb-8">
+                        <div className="mb-6">
                             <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-2xl font-bold text-gray-800">AI Rubric Helper System Prompt</h2>
+                                <h2 className="text-2xl font-bold text-gray-900">AI Rubric Helper System Prompt</h2>
                                 <button
                                     type="button"
                                     onClick={resetSystemPrompt}
@@ -200,9 +200,9 @@ Be objective and consistent in your evaluation.`;
                         </div>
 
                         {/* Grading Agent System Prompt Section */}
-                        <div className="mb-8">
+                        <div className="mb-6">
                             <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-2xl font-bold text-gray-800">Grading Agent System Prompt</h2>
+                                <h2 className="text-2xl font-bold text-gray-900">Grading Agent System Prompt</h2>
                                 <button
                                     type="button"
                                     onClick={resetGradingAgentPrompt}
@@ -251,12 +251,12 @@ Be objective and consistent in your evaluation.`;
                 </div>
 
                 {/* Information Section */}
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mt-6">
-                    <h3 className="text-lg font-bold text-blue-900 mb-2">About AI Rubric Helper</h3>
-                    <p className="text-blue-800 text-sm mb-2">
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6 mt-6">
+                    <h3 className="text-lg font-bold text-indigo-900 mb-2">About AI Rubric Helper</h3>
+                    <p className="text-indigo-800 text-sm mb-2">
                         The AI Rubric Helper uses advanced language models to assist you in creating comprehensive rubrics. It can:
                     </p>
-                    <ul className="text-blue-800 text-sm space-y-1 ml-6 list-disc">
+                    <ul className="text-indigo-800 text-sm space-y-1 ml-6 list-disc">
                         <li>Generate rubric criteria based on your assignment description</li>
                         <li>Create detailed performance levels with clear descriptors</li>
                         <li>Suggest appropriate weights for different criteria</li>

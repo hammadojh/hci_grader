@@ -52,12 +52,12 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+    <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-          <div className="flex justify-between items-start mb-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-6 border border-gray-200">
+          <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-4xl font-bold text-gray-800 mb-2">HCI Grader</h1>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">HCI Grader</h1>
               <p className="text-gray-600">Manage assignments, rubrics, and grading efficiently</p>
             </div>
             <Link
@@ -69,9 +69,9 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-200">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-800">Assignments</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Assignments</h2>
             <button
               onClick={() => setIsCreating(!isCreating)}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
@@ -81,7 +81,7 @@ export default function Home() {
           </div>
 
           {isCreating && (
-            <form onSubmit={createAssignment} className="mb-8 p-6 bg-gray-50 rounded-xl">
+            <form onSubmit={createAssignment} className="mb-6 p-6 bg-indigo-50 rounded-lg border border-indigo-200">
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Title
@@ -121,14 +121,14 @@ export default function Home() {
               </div>
               <button
                 type="submit"
-                className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
               >
                 Create Assignment
               </button>
             </form>
           )}
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             {assignments.length === 0 ? (
               <p className="text-gray-500 text-center py-8">
                 No assignments yet. Create your first assignment to get started!
@@ -137,11 +137,11 @@ export default function Home() {
               assignments.map((assignment) => (
                 <div
                   key={assignment._id}
-                  className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow"
+                  className="border border-gray-200 rounded-lg p-6 hover:shadow-md hover:border-indigo-300 transition-all"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <h3 className="text-xl font-bold text-gray-800 mb-2">
+                      <h3 className="text-xl font-bold text-gray-900 mb-2">
                         {assignment.title}
                       </h3>
                       <p className="text-gray-600 mb-2">{assignment.description}</p>
@@ -155,7 +155,7 @@ export default function Home() {
                     <div className="flex gap-2 ml-4">
                       <Link
                         href={`/assignment/${assignment._id}`}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
                       >
                         Manage
                       </Link>

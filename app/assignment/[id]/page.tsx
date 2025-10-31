@@ -85,6 +85,9 @@ export default function AssignmentDetail() {
   const [studentEmail, setStudentEmail] = useState('');
   const [answers, setAnswers] = useState<{ [questionId: string]: string }>({});
 
+  // Track which questions have rubrics expanded
+  const [expandedRubrics, setExpandedRubrics] = useState<{ [questionId: string]: boolean }>({});
+
   useEffect(() => {
     fetchAssignment();
     fetchQuestions();
@@ -446,6 +449,13 @@ export default function AssignmentDetail() {
     window.open(`/api/export?assignmentId=${assignmentId}`, '_blank');
   };
 
+  const toggleRubrics = (questionId: string) => {
+    setExpandedRubrics((prev) => ({
+      ...prev,
+      [questionId]: !prev[questionId],
+    }));
+  };
+
   if (!assignment) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8 flex items-center justify-center">
@@ -455,15 +465,15 @@ export default function AssignmentDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-          <div className="flex justify-between items-start mb-4">
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-6 border border-gray-200">
+          <div className="flex justify-between items-start">
             <div>
-              <Link href="/" className="text-indigo-600 hover:text-indigo-800 mb-2 inline-block">
+              <Link href="/" className="text-indigo-600 hover:text-indigo-700 mb-2 inline-block font-semibold">
                 ← Back to Assignments
               </Link>
-              <h1 className="text-4xl font-bold text-gray-800">{assignment.title}</h1>
+              <h1 className="text-4xl font-bold text-gray-900">{assignment.title}</h1>
               <p className="text-gray-600 mt-2">{assignment.description}</p>
               <p className="text-indigo-600 font-semibold mt-2">Total Points: {assignment.totalPoints}</p>
             </div>
@@ -476,7 +486,7 @@ export default function AssignmentDetail() {
               </Link>
               <button
                 onClick={exportCSV}
-                className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
               >
                 📊 Export CSV
               </button>
@@ -484,7 +494,7 @@ export default function AssignmentDetail() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-200">
           <div className="flex border-b border-gray-200 mb-6">
             <button
               onClick={() => setActiveTab('questions')}
@@ -510,10 +520,10 @@ export default function AssignmentDetail() {
             <div>
               <div className="flex justify-between items-center mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-800">Questions</h2>
+                  <h2 className="text-2xl font-bold text-gray-900">Questions</h2>
                   <p className="text-sm text-gray-600 mt-1">
                     Total Percentage: {getTotalPercentage()}% {getTotalPercentage() !== 100 && (
-                      <span className="text-orange-600 font-semibold">(Should be 100%)</span>
+                      <span className="text-amber-600 font-semibold">(Should be 100%)</span>
                     )}
                   </p>
                 </div>
@@ -533,8 +543,8 @@ export default function AssignmentDetail() {
               </div>
 
               {showQuestionForm && (
-                <form onSubmit={createOrUpdateQuestion} className="mb-8 p-6 bg-gray-50 rounded-xl">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                <form onSubmit={createOrUpdateQuestion} className="mb-6 p-6 bg-indigo-50 rounded-lg border border-indigo-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
                     {editingQuestion ? 'Edit Question' : 'Add New Question'}
                   </h3>
                   <div className="mb-4">
@@ -570,14 +580,14 @@ export default function AssignmentDetail() {
                   <div className="flex gap-2">
                     <button
                       type="submit"
-                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
                     >
                       {editingQuestion ? 'Update Question' : 'Add Question'}
                     </button>
                     <button
                       type="button"
                       onClick={cancelQuestionEdit}
-                      className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                      className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-lg font-semibold transition-colors"
                     >
                       Cancel
                     </button>
@@ -587,10 +597,10 @@ export default function AssignmentDetail() {
 
               <div className="space-y-6">
                 {questions.map((question) => (
-                  <div key={question._id} className="border border-gray-200 rounded-xl p-6">
+                  <div key={question._id} className="border border-gray-200 rounded-lg p-6 hover:border-indigo-200 transition-colors">
                     <div className="mb-4">
                       <div className="flex justify-between items-start mb-2">
-                        <h3 className="text-lg font-bold text-gray-800">
+                        <h3 className="text-lg font-bold text-gray-900">
                           Question {question.questionNumber}
                         </h3>
                         <div className="flex gap-2">
@@ -616,7 +626,15 @@ export default function AssignmentDetail() {
 
                     <div className="mt-4">
                       <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-semibold text-gray-700">Rubrics</h4>
+                        <button
+                          onClick={() => toggleRubrics(question._id)}
+                          className="flex items-center gap-2 font-semibold text-gray-700 hover:text-indigo-600 transition-colors"
+                        >
+                          <span className="text-lg">
+                            {expandedRubrics[question._id] ? '▼' : '▶'}
+                          </span>
+                          <span>Rubrics ({rubrics[question._id]?.length || 0})</span>
+                        </button>
                         <div className="flex gap-2">
                           <button
                             onClick={() => openAIHelper(question._id)}
@@ -630,16 +648,18 @@ export default function AssignmentDetail() {
                               setEditingRubric(null);
                               setRubricCriteriaName('');
                               setRubricLevels([{ name: '', description: '', percentage: 0 }]);
+                              // Auto-expand when adding a rubric
+                              setExpandedRubrics((prev) => ({ ...prev, [question._id]: true }));
                             }}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 rounded-lg text-sm font-semibold transition-colors"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1 rounded-lg text-sm font-semibold transition-colors"
                           >
                             + Add Rubric
                           </button>
                         </div>
                       </div>
 
-                      {(selectedQuestionForRubric === question._id || editingRubric?.questionId === question._id) && (
-                        <form onSubmit={createOrUpdateRubric} className="mb-4 p-4 bg-blue-50 rounded-lg">
+                      {expandedRubrics[question._id] && (selectedQuestionForRubric === question._id || editingRubric?.questionId === question._id) && (
+                        <form onSubmit={createOrUpdateRubric} className="mb-6 p-6 bg-indigo-50 rounded-lg border border-indigo-200">
                           <h4 className="font-semibold text-gray-800 mb-3">
                             {editingRubric ? 'Edit Rubric' : 'Add New Rubric'}
                           </h4>
@@ -647,11 +667,11 @@ export default function AssignmentDetail() {
                             <label className="block text-sm font-semibold text-gray-700 mb-1">
                               Criteria Name
                             </label>
-                            <input
+                              <input
                               type="text"
                               value={rubricCriteriaName}
                               onChange={(e) => setRubricCriteriaName(e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                               placeholder="e.g., Accuracy, Completeness, Clarity"
                               required
                             />
@@ -689,14 +709,14 @@ export default function AssignmentDetail() {
                                   type="text"
                                   value={level.name}
                                   onChange={(e) => updateRubricLevel(index, 'name', e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-indigo-500"
                                   placeholder="Level name (e.g., Excellent, Good)"
                                   required
                                 />
                                 <textarea
                                   value={level.description}
                                   onChange={(e) => updateRubricLevel(index, 'description', e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-indigo-500"
                                   placeholder="Description"
                                   rows={2}
                                   required
@@ -705,7 +725,7 @@ export default function AssignmentDetail() {
                                   type="number"
                                   value={level.percentage}
                                   onChange={(e) => updateRubricLevel(index, 'percentage', Number(e.target.value))}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                                   placeholder="Percentage (0-100)"
                                   min={0}
                                   max={100}
@@ -719,14 +739,14 @@ export default function AssignmentDetail() {
                           <div className="flex gap-2">
                             <button
                               type="submit"
-                              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
                             >
                               {editingRubric ? 'Update Rubric' : 'Add Rubric'}
                             </button>
                             <button
                               type="button"
                               onClick={cancelRubricEdit}
-                              className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                              className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
                             >
                               Cancel
                             </button>
@@ -734,7 +754,8 @@ export default function AssignmentDetail() {
                         </form>
                       )}
 
-                      <div className="space-y-3">
+                      {expandedRubrics[question._id] && (
+                        <div className="space-y-3">
                         {rubrics[question._id]?.map((rubric) => (
                           <div
                             key={rubric._id}
@@ -778,6 +799,7 @@ export default function AssignmentDetail() {
                           <p className="text-gray-500 text-sm">No rubrics yet</p>
                         )}
                       </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -793,72 +815,27 @@ export default function AssignmentDetail() {
           {activeTab === 'submissions' && (
             <div>
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Submissions & Grading</h2>
-                <button
-                  onClick={() => setShowSubmissionForm(!showSubmissionForm)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
-                >
-                  {showSubmissionForm ? 'Cancel' : '+ Add Submission'}
-                </button>
-              </div>
-
-              {/* Grading Mode Selection */}
-              {questions.length > 0 && submissions.length > 0 && (
-                <div className="mb-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border-2 border-purple-200">
-                  <h3 className="text-xl font-bold text-gray-800 mb-4">Choose Grading Mode</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Grade by Submission (Current) */}
-                    <div className="bg-white rounded-lg p-5 border-2 border-gray-200 hover:border-indigo-400 transition-all">
-                      <div className="flex items-start mb-3">
-                        <div className="bg-indigo-100 rounded-lg p-3 mr-4">
-                          <span className="text-2xl">📄</span>
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-bold text-gray-800 text-lg mb-2">Grade by Submission</h4>
-                          <p className="text-sm text-gray-600 mb-3">
-                            Grade all questions for one student at a time. Good for holistic evaluation.
-                          </p>
-                          <p className="text-xs text-gray-500 mb-3">
-                            👉 Click on individual submissions below to grade this way
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Grade by Question (New) */}
-                    <div className="bg-white rounded-lg p-5 border-2 border-purple-300 hover:border-purple-500 transition-all shadow-md">
-                      <div className="flex items-start mb-3">
-                        <div className="bg-purple-100 rounded-lg p-3 mr-4">
-                          <span className="text-2xl">📝</span>
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-bold text-gray-800 text-lg mb-2">
-                            Grade by Question
-                            <span className="ml-2 text-xs bg-purple-600 text-white px-2 py-1 rounded-full">NEW</span>
-                          </h4>
-                          <p className="text-sm text-gray-600 mb-3">
-                            Grade one question across all students. Better for consistency and fairness.
-                          </p>
-                          <Link
-                            href={`/grade-by-question/${assignmentId}/${questions[0]._id}`}
-                            className="inline-block bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors text-sm"
-                          >
-                            🚀 Start Grading by Question
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                <h2 className="text-2xl font-bold text-gray-900">Submissions & Grading</h2>
+                <div className="flex gap-3">
+                  {questions.length > 0 && submissions.length > 0 && (
+                    <Link
+                      href={`/grade-by-question/${assignmentId}/${questions[0]._id}`}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                    >
+                      📝 Grade by Question
+                    </Link>
+                  )}
+                  <button
+                    onClick={() => setShowSubmissionForm(!showSubmissionForm)}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                  >
+                    {showSubmissionForm ? 'Cancel' : '+ Add Submission'}
+                  </button>
                 </div>
-              )}
-
-              <div className="mb-4">
-                <h3 className="text-lg font-semibold text-gray-700">Grade by Submission</h3>
-                <p className="text-sm text-gray-600">Select a submission below to grade all questions for that student</p>
               </div>
 
               {showSubmissionForm && (
-                <form onSubmit={createSubmission} className="mb-8 p-6 bg-gray-50 rounded-xl">
+                <form onSubmit={createSubmission} className="mb-6 p-6 bg-indigo-50 rounded-lg border border-indigo-200">
                   <div className="mb-4">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Student Name
@@ -906,18 +883,18 @@ export default function AssignmentDetail() {
 
                   <button
                     type="submit"
-                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
                   >
                     Submit
                   </button>
                 </form>
               )}
 
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {submissions.map((submission) => (
                   <div
                     key={submission._id}
-                    className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow"
+                    className="border border-gray-200 rounded-lg p-6 hover:shadow-md hover:border-indigo-300 transition-all"
                   >
                     <div className="flex justify-between items-start">
                       <div>
@@ -929,7 +906,7 @@ export default function AssignmentDetail() {
                       </div>
                       <Link
                         href={`/grade/${submission._id}`}
-                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
                       >
                         Grade
                       </Link>

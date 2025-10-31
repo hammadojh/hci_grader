@@ -576,20 +576,20 @@ export default function GradeByQuestionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-[98%] mx-auto">
-        <div className="bg-white rounded-xl shadow-xl p-4 mb-4">
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-[95%] mx-auto">
+        <div className="bg-white rounded-xl shadow-lg p-4 mb-4 border border-gray-200">
           {/* Compact Header - Single Row */}
           <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200">
             <div className="flex items-center gap-4 flex-1">
               <Link
                 href={`/assignment/${assignment._id}`}
-                className="text-indigo-600 hover:text-indigo-800 font-semibold"
+                className="text-indigo-600 hover:text-indigo-700 font-semibold"
               >
                 ← Back
               </Link>
               <div className="border-l border-gray-300 h-6"></div>
-              <h1 className="text-xl font-bold text-gray-800">Grade by Question</h1>
+              <h1 className="text-xl font-bold text-gray-900">Grade by Question</h1>
               <span className="text-gray-600">•</span>
               <p className="text-gray-600">{assignment.title}</p>
               
@@ -693,7 +693,7 @@ export default function GradeByQuestionPage() {
                   className={`px-4 py-2 rounded-lg font-semibold text-white transition-colors ${
                     generatingAllAgents
                       ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-purple-600 hover:bg-purple-700'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
                   }`}
                 >
                   {generatingAllAgents ? 'Running All...' : '▶️ Run All'}
@@ -704,7 +704,7 @@ export default function GradeByQuestionPage() {
                 onClick={saveAllGrades}
                 disabled={saving}
                 className={`px-6 py-2 rounded-lg font-semibold text-white transition-colors ${
-                  saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+                  saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
                 }`}
               >
                 {saving ? 'Saving...' : '💾 Save'}
@@ -736,7 +736,7 @@ export default function GradeByQuestionPage() {
 
         {/* Split Layout: Answers on Left, Rubrics on Right */}
         {answers.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-200">
             <p className="text-gray-600 text-lg">No submissions for this question yet.</p>
           </div>
         ) : (
@@ -856,7 +856,7 @@ export default function GradeByQuestionPage() {
                   })()}
                 </>
               ) : (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+                <div className="bg-white rounded-lg shadow-lg p-8 text-center border border-gray-200">
                   <p className="text-gray-600">Select an answer to view</p>
                 </div>
               )}
@@ -1014,7 +1014,7 @@ export default function GradeByQuestionPage() {
                   })()}
                 </>
               ) : (
-                <div className="bg-white rounded-xl shadow-xl p-8 text-center">
+                <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-200">
                   <p className="text-gray-600">Select an answer to grade</p>
                 </div>
               )}

@@ -408,16 +408,16 @@ export default function GradingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+    <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-6">
           <Link
             href={`/assignment/${assignment._id}`}
-            className="text-indigo-600 hover:text-indigo-800 mb-4 inline-block"
+            className="text-indigo-600 hover:text-indigo-700 mb-4 inline-block font-semibold"
           >
             ← Back to Assignment
           </Link>
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">Grading Submission</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Grading Submission</h1>
           <div className="flex justify-between items-start">
             <div className="flex-1">
               {editingSubmission && editedSubmission ? (
@@ -448,7 +448,7 @@ export default function GradingPage() {
                     <button
                       onClick={saveSubmissionInfo}
                       disabled={saving}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400"
                     >
                       Save
                     </button>
@@ -524,9 +524,9 @@ export default function GradingPage() {
             const questionMaxPoints = (question.pointsPercentage / 100) * assignment.totalPoints;
 
             return (
-              <div key={question._id} className="bg-white rounded-2xl shadow-xl p-8">
+              <div key={question._id} className="bg-white rounded-xl shadow-lg p-8 border border-gray-200">
                 <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-gray-800 mb-3">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-3">
                     Question {question.questionNumber}
                   </h2>
                   <p className="text-gray-700 mb-2">{question.questionText}</p>
@@ -537,7 +537,7 @@ export default function GradingPage() {
 
                 {answer && (
                   <>
-                    <div className="mb-6 p-4 bg-blue-50 rounded-xl">
+                    <div className="mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-semibold text-gray-800">Student's Answer:</h3>
                         <button
@@ -578,7 +578,7 @@ export default function GradingPage() {
 
                     {questionRubrics.length > 0 ? (
                       <>
-                        <h3 className="font-semibold text-gray-800 mb-4 text-lg">
+                        <h3 className="font-semibold text-gray-900 mb-4 text-lg">
                           Evaluate Each Criteria:
                         </h3>
                         <div className="space-y-6">
@@ -674,8 +674,8 @@ export default function GradingPage() {
                         </div>
                       </>
                     ) : (
-                      <div className="p-6 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <p className="text-yellow-800">
+                      <div className="p-6 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-amber-800">
                           ⚠️ No rubrics defined for this question. Please add rubrics in the assignment settings.
                         </p>
                       </div>
@@ -684,7 +684,7 @@ export default function GradingPage() {
                 )}
 
                 {!answer && (
-                  <div className="p-6 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="p-6 bg-amber-50 border border-amber-200 rounded-lg">
                     <p className="text-gray-700 mb-4">
                       ⚠️ No answer submitted for this question
                     </p>
@@ -705,10 +705,10 @@ export default function GradingPage() {
           })}
         </div>
 
-        <div className="mt-8 bg-white rounded-2xl shadow-xl p-8">
+        <div className="mt-8 bg-white rounded-xl shadow-lg p-8 border border-gray-200">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h2 className="text-2xl font-bold text-gray-800">Summary</h2>
+              <h2 className="text-2xl font-bold text-gray-900">Summary</h2>
               <p className="text-gray-600">Review and save your grading</p>
             </div>
             <div className="text-right">
@@ -727,7 +727,7 @@ export default function GradingPage() {
               disabled={saving}
               className={`px-8 py-3 rounded-lg font-semibold text-white transition-colors ${saving
                 ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-green-600 hover:bg-green-700'
+                : 'bg-indigo-600 hover:bg-indigo-700'
                 }`}
             >
               {saving ? 'Saving...' : '💾 Save All Grades'}

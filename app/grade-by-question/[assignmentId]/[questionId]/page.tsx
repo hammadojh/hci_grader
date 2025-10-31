@@ -149,21 +149,7 @@ export default function GradeByQuestionPage() {
     setSaveMessage('');
 
     try {
-      // Validate that all criteria have been evaluated (skip answers with empty text)
-      for (const answerId in localAnswers) {
-        const answer = localAnswers[answerId];
-
-        // Skip validation for newly added answers that haven't been filled out
-        const isNewEmptyAnswer = !answer.answerText || answer.answerText === '[Enter student answer here]';
-
-        if (!isNewEmptyAnswer && rubrics.length > 0 && answer.criteriaEvaluations.length !== rubrics.length) {
-          setSaveMessage('✗ Please select a level for all criteria before saving');
-          setSaving(false);
-          return;
-        }
-      }
-
-      // Save all modified answers
+      // Save all modified answers (no validation - allow partial grading)
       for (const answerId in localAnswers) {
         const answer = localAnswers[answerId];
         console.log('Saving answer:', answerId, answer);
@@ -490,7 +476,7 @@ export default function GradeByQuestionPage() {
             {/* Middle - Selected Answer Display */}
             <div className="w-3/5">
               {selectedAnswerId && localAnswers[selectedAnswerId] ? (
-                <div className="bg-white rounded-xl shadow-xl p-6">
+                <>
                   {(() => {
                     const answer = localAnswers[selectedAnswerId];
                     const answerWithSubmission = answers.find(a => a._id === selectedAnswerId);
@@ -498,8 +484,8 @@ export default function GradeByQuestionPage() {
 
                     return (
                       <>
-                        {/* Answer Display */}
-                        <div className="p-6 bg-blue-50 rounded-lg relative">
+                        {/* Answer Display - No Container */}
+                        <div className="p-6 bg-white rounded-lg relative shadow-sm border border-gray-200">
                           <button
                             onClick={async () => {
                               if (editingAnswerId === answer._id) {
@@ -536,9 +522,9 @@ export default function GradeByQuestionPage() {
                       </>
                     );
                   })()}
-                </div>
+                </>
               ) : (
-                <div className="bg-white rounded-xl shadow-xl p-8 text-center">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
                   <p className="text-gray-600">Select an answer to view</p>
                 </div>
               )}
@@ -547,105 +533,100 @@ export default function GradeByQuestionPage() {
             {/* Right Side - Rubric Grading Panel */}
             <div className="w-1/5">
               {selectedAnswerId && localAnswers[selectedAnswerId] ? (
-                <div className="bg-white rounded-xl shadow-xl p-6">
+                <>
                   {(() => {
                     const answer = localAnswers[selectedAnswerId];
                     const questionMaxPoints = getQuestionMaxPoints();
 
                     return (
                       <>
-                        {/* Rubric Grading */}
+                        {/* Score Summary - At Top */}
+                        <div className="mb-4 p-4 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-200">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="font-semibold text-gray-800 text-sm">Final Score:</p>
+                              <p className="text-xs text-gray-600">
+                                {(answer.pointsPercentage || 0).toFixed(1)}%
+                              </p>
+                            </div>
+                            <span className="text-2xl font-bold text-indigo-600">
+                              {(((answer.pointsPercentage || 0) / 100) * questionMaxPoints).toFixed(2)} /{' '}
+                              {questionMaxPoints.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Rubric Grading - No Container */}
                         {rubrics.length > 0 ? (
-                          <>
-                            <h4 className="font-semibold text-gray-800 mb-4 text-lg">
-                              Grade Rubrics:
-                            </h4>
-                            <div className="space-y-4 pr-2">
-                              {rubrics.map((rubric) => {
-                                const evaluation = answer.criteriaEvaluations.find(
-                                  (e) => e.rubricId === rubric._id
-                                );
+                          <div className="space-y-4">
+                            {rubrics.map((rubric) => {
+                              const evaluation = answer.criteriaEvaluations.find(
+                                (e) => e.rubricId === rubric._id
+                              );
 
-                                return (
-                                  <div
-                                    key={rubric._id}
-                                    className="border border-gray-200 rounded-lg p-3 bg-gray-50"
-                                  >
-                                    <h5 className="font-bold text-gray-800 mb-2 text-sm">
-                                      {rubric.criteriaName}
-                                      {evaluation && (
-                                        <span className="ml-2 text-xs text-green-600">✓</span>
-                                      )}
-                                    </h5>
+                              return (
+                                <div
+                                  key={rubric._id}
+                                  className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm"
+                                >
+                                  <h5 className="font-bold text-gray-800 mb-2 text-sm">
+                                    {rubric.criteriaName}
+                                    {evaluation && (
+                                      <span className="ml-2 text-xs text-green-600">✓</span>
+                                    )}
+                                  </h5>
 
-                                    <div className="mb-2">
-                                      <select
-                                        value={evaluation?.selectedLevelIndex ?? ''}
-                                        onChange={(e) => {
-                                          if (e.target.value !== '') {
-                                            selectCriteriaLevel(answer._id!, rubric, Number(e.target.value));
-                                          }
-                                        }}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
-                                      >
-                                        <option value="">Select level...</option>
-                                        {rubric.levels.map((level, levelIdx) => (
-                                          <option key={levelIdx} value={levelIdx}>
-                                            {level.name} ({level.percentage}%) - {level.description}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      
-                                      {/* Show selected level details */}
-                                      {evaluation && (
-                                        <div className="mt-2 p-2 bg-indigo-50 rounded border border-indigo-200">
-                                          <div className="flex justify-between items-start mb-1">
-                                            <p className="font-semibold text-indigo-900 text-xs">
-                                              {rubric.levels[evaluation.selectedLevelIndex].name}
-                                            </p>
-                                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-600 text-white">
-                                              {rubric.levels[evaluation.selectedLevelIndex].percentage}%
-                                            </span>
-                                          </div>
-                                          <p className="text-xs text-indigo-700">
-                                            {rubric.levels[evaluation.selectedLevelIndex].description}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    <div>
-                                      <textarea
-                                        value={evaluation?.feedback || ''}
-                                        onChange={(e) =>
-                                          updateCriteriaFeedback(answer._id!, rubric._id!, e.target.value)
+                                  <div className="mb-2">
+                                    <select
+                                      value={evaluation?.selectedLevelIndex ?? ''}
+                                      onChange={(e) => {
+                                        if (e.target.value !== '') {
+                                          selectCriteriaLevel(answer._id!, rubric, Number(e.target.value));
                                         }
-                                        className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-xs"
-                                        rows={2}
-                                        placeholder={`Feedback...`}
-                                      />
-                                    </div>
+                                      }}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
+                                    >
+                                      <option value="">Select level...</option>
+                                      {rubric.levels.map((level, levelIdx) => (
+                                        <option key={levelIdx} value={levelIdx}>
+                                          {level.name} ({level.percentage}%) - {level.description}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    
+                                    {/* Show selected level details */}
+                                    {evaluation && (
+                                      <div className="mt-2 p-2 bg-indigo-50 rounded border border-indigo-200">
+                                        <div className="flex justify-between items-start mb-1">
+                                          <p className="font-semibold text-indigo-900 text-xs">
+                                            {rubric.levels[evaluation.selectedLevelIndex].name}
+                                          </p>
+                                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-600 text-white">
+                                            {rubric.levels[evaluation.selectedLevelIndex].percentage}%
+                                          </span>
+                                        </div>
+                                        <p className="text-xs text-indigo-700">
+                                          {rubric.levels[evaluation.selectedLevelIndex].description}
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
-                                );
-                              })}
-                            </div>
 
-                            {/* Score Summary - Compact */}
-                            <div className="mt-6 p-4 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-200">
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <p className="font-semibold text-gray-800 text-sm">Final Score:</p>
-                                  <p className="text-xs text-gray-600">
-                                    {(answer.pointsPercentage || 0).toFixed(1)}%
-                                  </p>
+                                  <div>
+                                    <textarea
+                                      value={evaluation?.feedback || ''}
+                                      onChange={(e) =>
+                                        updateCriteriaFeedback(answer._id!, rubric._id!, e.target.value)
+                                      }
+                                      className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-xs"
+                                      rows={2}
+                                      placeholder={`Feedback...`}
+                                    />
+                                  </div>
                                 </div>
-                                <span className="text-2xl font-bold text-indigo-600">
-                                  {(((answer.pointsPercentage || 0) / 100) * questionMaxPoints).toFixed(2)} /{' '}
-                                  {questionMaxPoints.toFixed(2)}
-                                </span>
-                              </div>
-                            </div>
-                          </>
+                              );
+                            })}
+                          </div>
                         ) : (
                           <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                             <p className="text-yellow-800 text-sm">
@@ -656,7 +637,7 @@ export default function GradeByQuestionPage() {
                       </>
                     );
                   })()}
-                </div>
+                </>
               ) : (
                 <div className="bg-white rounded-xl shadow-xl p-8 text-center">
                   <p className="text-gray-600">Select an answer to grade</p>

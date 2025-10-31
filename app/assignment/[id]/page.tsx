@@ -793,13 +793,68 @@ export default function AssignmentDetail() {
           {activeTab === 'submissions' && (
             <div>
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Submissions</h2>
+                <h2 className="text-2xl font-bold text-gray-800">Submissions & Grading</h2>
                 <button
                   onClick={() => setShowSubmissionForm(!showSubmissionForm)}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
                 >
                   {showSubmissionForm ? 'Cancel' : '+ Add Submission'}
                 </button>
+              </div>
+
+              {/* Grading Mode Selection */}
+              {questions.length > 0 && submissions.length > 0 && (
+                <div className="mb-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border-2 border-purple-200">
+                  <h3 className="text-xl font-bold text-gray-800 mb-4">Choose Grading Mode</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Grade by Submission (Current) */}
+                    <div className="bg-white rounded-lg p-5 border-2 border-gray-200 hover:border-indigo-400 transition-all">
+                      <div className="flex items-start mb-3">
+                        <div className="bg-indigo-100 rounded-lg p-3 mr-4">
+                          <span className="text-2xl">📄</span>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold text-gray-800 text-lg mb-2">Grade by Submission</h4>
+                          <p className="text-sm text-gray-600 mb-3">
+                            Grade all questions for one student at a time. Good for holistic evaluation.
+                          </p>
+                          <p className="text-xs text-gray-500 mb-3">
+                            👉 Click on individual submissions below to grade this way
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Grade by Question (New) */}
+                    <div className="bg-white rounded-lg p-5 border-2 border-purple-300 hover:border-purple-500 transition-all shadow-md">
+                      <div className="flex items-start mb-3">
+                        <div className="bg-purple-100 rounded-lg p-3 mr-4">
+                          <span className="text-2xl">📝</span>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold text-gray-800 text-lg mb-2">
+                            Grade by Question
+                            <span className="ml-2 text-xs bg-purple-600 text-white px-2 py-1 rounded-full">NEW</span>
+                          </h4>
+                          <p className="text-sm text-gray-600 mb-3">
+                            Grade one question across all students. Better for consistency and fairness.
+                          </p>
+                          <Link
+                            href={`/grade-by-question/${assignmentId}/${questions[0]._id}`}
+                            className="inline-block bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors text-sm"
+                          >
+                            🚀 Start Grading by Question
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-gray-700">Grade by Submission</h3>
+                <p className="text-sm text-gray-600">Select a submission below to grade all questions for that student</p>
               </div>
 
               {showSubmissionForm && (

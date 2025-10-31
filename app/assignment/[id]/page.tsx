@@ -99,9 +99,28 @@ export default function AssignmentDetail() {
 
   // Submission form state
   const [showSubmissionForm, setShowSubmissionForm] = useState(false);
+  const [editingSubmission, setEditingSubmission] = useState<Submission | null>(null);
   const [studentName, setStudentName] = useState('');
   const [studentEmail, setStudentEmail] = useState('');
   const [answers, setAnswers] = useState<{ [questionId: string]: string }>({});
+
+  // Upload submission state
+  const [submissionUploadMode, setSubmissionUploadMode] = useState<'manual' | 'upload'>('manual');
+  const [submissionInputMode, setSubmissionInputMode] = useState<'file' | 'text' | 'markdown'>('file');
+  const [selectedSubmissionFile, setSelectedSubmissionFile] = useState<File | null>(null);
+  const [pastedSubmissionText, setPastedSubmissionText] = useState('');
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseError, setParseError] = useState('');
+  const [parsedAnswers, setParsedAnswers] = useState<Array<{
+    questionId: string;
+    questionNumber: number;
+    questionText: string;
+    answerText: string;
+    confidence: string;
+  }>>([]);
+  const [parseSummary, setParseSummary] = useState('');
+  const [parseWarnings, setParseWarnings] = useState<string[]>([]);
+  const [extractedTextPreview, setExtractedTextPreview] = useState('');
 
   // Track which questions have rubrics expanded
   const [expandedRubrics, setExpandedRubrics] = useState<{ [questionId: string]: boolean }>({});
@@ -430,36 +449,233 @@ export default function AssignmentDetail() {
     }
   };
 
-  const createSubmission = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle file selection for submission upload
+  const handleSubmissionFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const isValid = file.type === 'application/pdf' ||
+                     file.type.startsWith('image/') ||
+                     file.name.endsWith('.md') ||
+                     file.name.endsWith('.markdown') ||
+                     file.type.startsWith('text/');
+      if (isValid) {
+        setSelectedSubmissionFile(file);
+        setParseError('');
+      } else {
+        setParseError('Please select a valid file (PDF, image, markdown, or text file)');
+        setSelectedSubmissionFile(null);
+      }
+    }
+  };
 
-    const submissionRes = await fetch('/api/submissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assignmentId,
-        studentName,
-        studentEmail,
-      }),
-    });
-    const submission = await submissionRes.json();
-
-    for (const question of questions) {
-      await fetch('/api/answers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          submissionId: submission._id,
-          questionId: question._id,
-          answerText: answers[question._id] || '',
-        }),
-      });
+  // Parse uploaded submission
+  const parseSubmission = async () => {
+    if (submissionInputMode === 'file' && !selectedSubmissionFile) {
+      setParseError('Please select a file to upload');
+      return;
+    }
+    if ((submissionInputMode === 'text' || submissionInputMode === 'markdown') && !pastedSubmissionText.trim()) {
+      setParseError('Please enter some text');
+      return;
     }
 
+    setIsParsing(true);
+    setParseError('');
+    setParsedAnswers([]);
+
+    try {
+      let response;
+
+      if (submissionInputMode === 'file') {
+        // Send file as FormData
+        const formData = new FormData();
+        formData.append('file', selectedSubmissionFile!);
+        formData.append('assignmentId', assignmentId);
+
+        response = await fetch('/api/parse-submission', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        // Send text/markdown as JSON
+        response = await fetch('/api/parse-submission', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: pastedSubmissionText,
+            assignmentId,
+          }),
+        });
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setParseError(data.error || 'Failed to parse submission');
+        return;
+      }
+
+      setParsedAnswers(data.answers || []);
+      setParseSummary(data.summary || 'Submission parsed successfully');
+      setParseWarnings(data.warnings || []);
+      setExtractedTextPreview(data.extractedText || '');
+
+      // Populate answers state with parsed answers
+      const answersObj: { [questionId: string]: string } = {};
+      data.answers?.forEach((answer: any) => {
+        answersObj[answer.questionId] = answer.answerText;
+      });
+      setAnswers(answersObj);
+
+    } catch (error) {
+      console.error('Parse error:', error);
+      setParseError('Failed to parse submission. Please try again.');
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // Reset upload form
+  const resetUploadForm = () => {
+    setSubmissionUploadMode('manual');
+    setSubmissionInputMode('file');
+    setSelectedSubmissionFile(null);
+    setPastedSubmissionText('');
+    setParsedAnswers([]);
+    setParseSummary('');
+    setParseWarnings([]);
+    setParseError('');
+    setExtractedTextPreview('');
+  };
+
+  // Start editing a submission
+  const startEditSubmission = async (submission: Submission) => {
+    setEditingSubmission(submission);
+    setStudentName(submission.studentName);
+    setStudentEmail(submission.studentEmail);
+    setShowSubmissionForm(true);
+    resetUploadForm();
+    
+    // Fetch existing answers for this submission
+    const answersRes = await fetch(`/api/answers?submissionId=${submission._id}`);
+    const existingAnswers = await answersRes.json();
+    
+    const answersObj: { [questionId: string]: string } = {};
+    existingAnswers.forEach((answer: any) => {
+      answersObj[answer.questionId] = answer.answerText;
+    });
+    setAnswers(answersObj);
+  };
+
+  // Cancel editing
+  const cancelSubmissionEdit = () => {
+    setEditingSubmission(null);
     setStudentName('');
     setStudentEmail('');
     setAnswers({});
     setShowSubmissionForm(false);
+    resetUploadForm();
+  };
+
+  // Delete submission
+  const deleteSubmission = async (submissionId: string) => {
+    if (!confirm('Are you sure you want to delete this submission? This will also delete all associated answers and cannot be undone.')) {
+      return;
+    }
+
+    try {
+      // Delete the submission (API will cascade delete all associated answers)
+      const res = await fetch(`/api/submissions/${submissionId}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        fetchSubmissions();
+      } else {
+        const error = await res.json();
+        alert(`Failed to delete submission: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Failed to delete submission');
+    }
+  };
+
+  const createOrUpdateSubmission = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (editingSubmission) {
+      // Update existing submission
+      await fetch('/api/submissions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          _id: editingSubmission._id,
+          studentName,
+          studentEmail,
+        }),
+      });
+
+      // Update answers
+      for (const question of questions) {
+        const existingAnswerRes = await fetch(`/api/answers?submissionId=${editingSubmission._id}&questionId=${question._id}`);
+        const existingAnswers = await existingAnswerRes.json();
+
+        if (existingAnswers.length > 0) {
+          // Update existing answer
+          await fetch('/api/answers', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              _id: existingAnswers[0]._id,
+              answerText: answers[question._id] || '',
+            }),
+          });
+        } else {
+          // Create new answer if it doesn't exist
+          await fetch('/api/answers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              submissionId: editingSubmission._id,
+              questionId: question._id,
+              answerText: answers[question._id] || '',
+            }),
+          });
+        }
+      }
+    } else {
+      // Create new submission
+      const submissionRes = await fetch('/api/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentId,
+          studentName,
+          studentEmail,
+        }),
+      });
+      const submission = await submissionRes.json();
+
+      for (const question of questions) {
+        await fetch('/api/answers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            submissionId: submission._id,
+            questionId: question._id,
+            answerText: answers[question._id] || '',
+          }),
+        });
+      }
+    }
+
+    setEditingSubmission(null);
+    setStudentName('');
+    setStudentEmail('');
+    setAnswers({});
+    setShowSubmissionForm(false);
+    resetUploadForm();
     fetchSubmissions();
   };
 
@@ -1026,7 +1242,14 @@ export default function AssignmentDetail() {
                     </Link>
                   )}
                   <button
-                    onClick={() => setShowSubmissionForm(!showSubmissionForm)}
+                    onClick={() => {
+                      if (showSubmissionForm) {
+                        cancelSubmissionEdit();
+                      } else {
+                        setShowSubmissionForm(true);
+                        setEditingSubmission(null);
+                      }
+                    }}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
                   >
                     {showSubmissionForm ? 'Cancel' : '+ Add Submission'}
@@ -1035,7 +1258,10 @@ export default function AssignmentDetail() {
               </div>
 
               {showSubmissionForm && (
-                <form onSubmit={createSubmission} className="mb-6 p-6 bg-indigo-50 rounded-lg border border-indigo-200">
+                <form onSubmit={createOrUpdateSubmission} className="mb-6 p-6 bg-indigo-50 rounded-lg border border-indigo-200">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">
+                    {editingSubmission ? '✏️ Edit Submission' : '➕ Add New Submission'}
+                  </h3>
                   <div className="mb-4">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Student Name
@@ -1061,12 +1287,243 @@ export default function AssignmentDetail() {
                     />
                   </div>
 
+                  {/* Answer Input Mode Selection */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-semibold text-gray-700 mb-3">
+                      How would you like to add answers?
+                    </label>
+                    <div className="flex gap-4 mb-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSubmissionUploadMode('manual');
+                          resetUploadForm();
+                        }}
+                        className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-colors ${
+                          submissionUploadMode === 'manual'
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        ✏️ Type Manually
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSubmissionUploadMode('upload')}
+                        className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-colors ${
+                          submissionUploadMode === 'upload'
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        📤 Upload / Paste (AI Parsing)
+                      </button>
+                    </div>
+
+                    {/* Upload Mode UI */}
+                    {submissionUploadMode === 'upload' && (
+                      <div className="bg-white p-4 rounded-lg border border-indigo-200 mb-4">
+                        <div className="flex border-b border-gray-200 mb-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSubmissionInputMode('file');
+                              setPastedSubmissionText('');
+                              setParseError('');
+                            }}
+                            className={`px-4 py-2 font-semibold transition-colors ${
+                              submissionInputMode === 'file'
+                                ? 'border-b-2 border-indigo-600 text-indigo-600'
+                                : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                          >
+                            📁 Upload File
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSubmissionInputMode('text');
+                              setSelectedSubmissionFile(null);
+                              setParseError('');
+                            }}
+                            className={`px-4 py-2 font-semibold transition-colors ${
+                              submissionInputMode === 'text'
+                                ? 'border-b-2 border-indigo-600 text-indigo-600'
+                                : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                          >
+                            📝 Paste Text
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSubmissionInputMode('markdown');
+                              setSelectedSubmissionFile(null);
+                              setParseError('');
+                            }}
+                            className={`px-4 py-2 font-semibold transition-colors ${
+                              submissionInputMode === 'markdown'
+                                ? 'border-b-2 border-indigo-600 text-indigo-600'
+                                : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                          >
+                            📋 Paste Markdown
+                          </button>
+                        </div>
+
+                        {/* File Upload */}
+                        {submissionInputMode === 'file' && (
                   <div className="mb-4">
-                    <h3 className="font-semibold text-gray-700 mb-3">Answers</h3>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Select File (PDF, Image, Markdown, or Text)
+                            </label>
+                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-indigo-500 transition-colors">
+                              <input
+                                type="file"
+                                accept="application/pdf,image/*,.md,.markdown,text/*"
+                                onChange={handleSubmissionFileSelect}
+                                className="hidden"
+                                id="submission-file-upload"
+                              />
+                              <label htmlFor="submission-file-upload" className="cursor-pointer">
+                                <div className="text-4xl mb-2">
+                                  {selectedSubmissionFile?.type.startsWith('image/') ? '🖼️' : '📄'}
+                                </div>
+                                <p className="text-gray-700 font-semibold mb-1">
+                                  {selectedSubmissionFile ? selectedSubmissionFile.name : 'Click to select a file'}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  PDF, images (with OCR), markdown, or text files
+                                </p>
+                              </label>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Text Paste */}
+                        {submissionInputMode === 'text' && (
+                          <div className="mb-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Paste Student's Answers
+                            </label>
+                            <textarea
+                              value={pastedSubmissionText}
+                              onChange={(e) => setPastedSubmissionText(e.target.value)}
+                              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
+                              rows={10}
+                              placeholder="Paste the student's submission text here...
+
+Example:
+Question 1: UX design focuses on user experience...
+Question 2: The design thinking process includes empathize, define, ideate..."
+                            />
+                          </div>
+                        )}
+
+                        {/* Markdown Paste */}
+                        {submissionInputMode === 'markdown' && (
+                          <div className="mb-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Paste Markdown Content
+                            </label>
+                            <textarea
+                              value={pastedSubmissionText}
+                              onChange={(e) => setPastedSubmissionText(e.target.value)}
+                              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
+                              rows={10}
+                              placeholder="Paste markdown content here...
+
+# Question 1
+Answer here...
+
+# Question 2
+Answer here..."
+                            />
+                          </div>
+                        )}
+
+                        {/* Parse Button */}
+                        {((submissionInputMode === 'file' && selectedSubmissionFile) ||
+                          ((submissionInputMode === 'text' || submissionInputMode === 'markdown') && pastedSubmissionText.trim())) && (
+                          <button
+                            type="button"
+                            onClick={parseSubmission}
+                            disabled={isParsing}
+                            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold transition-colors w-full mb-3"
+                          >
+                            {isParsing ? '🔄 Parsing with AI... This may take a moment' : '🤖 Parse Submission with AI'}
+                          </button>
+                        )}
+
+                        {/* Parse Error */}
+                        {parseError && (
+                          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-red-800 text-sm">{parseError}</p>
+                          </div>
+                        )}
+
+                        {/* Parse Summary */}
+                        {parseSummary && parsedAnswers.length > 0 && (
+                          <div className="mb-3 space-y-3">
+                            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                              <p className="text-green-800 text-sm font-semibold">✅ {parseSummary}</p>
+                              {parseWarnings.length > 0 && (
+                                <div className="mt-2">
+                                  <p className="text-yellow-700 text-xs font-semibold">⚠️ Warnings:</p>
+                                  <ul className="list-disc list-inside text-yellow-700 text-xs">
+                                    {parseWarnings.map((warning, idx) => (
+                                      <li key={idx}>{warning}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              <p className="text-green-700 text-xs mt-2">
+                                Review and edit the parsed answers below before submitting.
+                              </p>
+                            </div>
+                            
+                            {/* Extracted Text Preview */}
+                            {extractedTextPreview && (
+                              <details className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <summary className="text-sm font-semibold text-gray-700 cursor-pointer hover:text-gray-900">
+                                  📄 View Extracted Text (what AI analyzed)
+                                </summary>
+                                <div className="mt-2 p-3 bg-white border border-gray-200 rounded text-xs font-mono text-gray-700 max-h-60 overflow-y-auto whitespace-pre-wrap">
+                                  {extractedTextPreview}
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Answers Section */}
+                  <div className="mb-4">
+                    <h3 className="font-semibold text-gray-700 mb-3">
+                      {submissionUploadMode === 'upload' && parsedAnswers.length > 0 ? 'Review Parsed Answers' : 'Answers'}
+                    </h3>
                     {questions.map((question) => (
                       <div key={question._id} className="mb-4">
                         <label className="block text-sm font-semibold text-gray-700 mb-2">
                           Question {question.questionNumber}: {question.questionText}
+                          {submissionUploadMode === 'upload' && parsedAnswers.length > 0 && (
+                            <span className="ml-2 text-xs">
+                              {(() => {
+                                const parsed = parsedAnswers.find(a => a.questionId === question._id);
+                                const confidence = parsed?.confidence || 'low';
+                                const color = confidence === 'high' ? 'text-green-600' : confidence === 'medium' ? 'text-yellow-600' : 'text-red-600';
+                                return parsed?.answerText ? (
+                                  <span className={color}>
+                                    ({confidence} confidence)
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-500">(no answer found)</span>
+                                );
+                              })()}
+                            </span>
+                          )}
                         </label>
                         <textarea
                           value={answers[question._id] || ''}
@@ -1081,12 +1538,23 @@ export default function AssignmentDetail() {
                     ))}
                   </div>
 
-                  <button
-                    type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
-                  >
-                    Submit
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                    >
+                      {editingSubmission ? '💾 Update Submission' : '➕ Create Submission'}
+                    </button>
+                    {editingSubmission && (
+                      <button
+                        type="button"
+                        onClick={cancelSubmissionEdit}
+                        className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </form>
               )}
 
@@ -1104,12 +1572,26 @@ export default function AssignmentDetail() {
                           Submitted: {new Date(submission.submittedAt).toLocaleString()}
                         </p>
                       </div>
-                      <Link
-                        href={`/grade/${submission._id}`}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
-                      >
-                        Grade
-                      </Link>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => startEditSubmission(submission)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          onClick={() => deleteSubmission(submission._id)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          🗑️ Delete
+                        </button>
+                        <Link
+                          href={`/grade/${submission._id}`}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          📝 Grade
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 ))}

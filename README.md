@@ -8,6 +8,7 @@ A comprehensive Next.js application with MongoDB for educators to manage assignm
 - ✅ **Question Management**: Add multiple questions to each assignment with point values
 - ✅ **Rubric System**: Create detailed rubrics for each question with criteria and point distributions
 - ✅ **Submission Management**: Add student submissions with answers to all questions
+- ✅ **AI-Powered Submission Upload**: Upload student submissions in multiple formats (PDF, images with OCR, text, markdown) and automatically parse answers using AI
 - ✅ **Grading Interface**: Grade submissions by selecting rubrics and providing custom feedback
 - ✅ **CSV Export**: Export grading results including all questions, answers, feedback, and scores
 - ✅ **Modern UI**: Beautiful, responsive interface with Tailwind CSS
@@ -23,6 +24,7 @@ A comprehensive Next.js application with MongoDB for educators to manage assignm
 
 - Node.js 18+ installed
 - MongoDB installed and running locally (or use MongoDB Atlas)
+- OpenAI API key (required for AI-powered features like submission upload and rubric generation)
 
 ## Getting Started
 
@@ -100,11 +102,33 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### 4. Add Submissions
 
+#### Option A: Manual Entry
 - Go to "Submissions & Grading" tab
 - Click "Add Submission"
 - Enter student name and email
+- Choose "✏️ Type Manually"
 - Provide answers for each question
 - Submit
+
+#### Option B: AI-Powered Upload (New!)
+- Go to "Submissions & Grading" tab
+- Click "Add Submission"
+- Enter student name and email
+- Choose "📤 Upload / Paste (AI Parsing)"
+- Upload a file (PDF, image, markdown, or text) OR paste text/markdown
+- Click "🤖 Parse Submission with AI"
+- Review the AI-extracted answers (with confidence indicators)
+- Edit any answers that need correction
+- Submit
+
+Supported formats:
+- **PDF documents**: Text extraction
+- **Images**: OCR (Optical Character Recognition) for handwritten or typed submissions
+- **Markdown files**: Direct parsing
+- **Text files**: Direct extraction
+- **Pasted text/markdown**: Quick entry
+
+See [SUBMISSION_UPLOAD_FEATURE.md](./SUBMISSION_UPLOAD_FEATURE.md) for detailed documentation.
 
 ### 5. Grade Submissions
 
@@ -207,6 +231,11 @@ hci_grader/
 - `POST /api/answers` - Create answer
 - `PUT /api/answers` - Update answer (grading)
 
+### Parse Submission (AI)
+- `POST /api/parse-submission` - Parse uploaded submission files or text using AI
+  - Accepts: FormData (file upload) or JSON (text/markdown)
+  - Returns: Parsed answers with confidence scores
+
 ### Export
 - `GET /api/export?assignmentId=xxx` - Export grades as CSV
 
@@ -248,6 +277,15 @@ If port 3000 is busy:
 npm run dev -- -p 3001
 ```
 
+## Recent Updates
+
+### AI-Powered Submission Upload (Latest)
+- Upload student submissions in PDF, images, markdown, or text format
+- Automatic OCR for handwritten or typed submissions
+- Intelligent answer parsing and question matching
+- Confidence indicators for parsed answers
+- Review and edit interface before final submission
+
 ## Future Enhancements
 
 - [ ] User authentication and role-based access
@@ -255,7 +293,8 @@ npm run dev -- -p 3001
 - [ ] Analytics dashboard
 - [ ] Batch CSV upload for submissions
 - [ ] Comments and revision requests
-- [ ] AI-assisted grading suggestions
+- [ ] AI-assisted grading suggestions (partial implementation via grading agents)
+- [ ] Batch submission upload (multiple students at once)
 
 ## License
 

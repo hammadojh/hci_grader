@@ -95,6 +95,9 @@ export default function GradeByQuestionPage() {
   const [localAnswers, setLocalAnswers] = useState<{ [answerId: string]: Answer }>({});
   const [editingAnswerId, setEditingAnswerId] = useState<string | null>(null);
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null);
+  
+  // Debounce timer for auto-save
+  const feedbackDebounceTimerRef = useState<{ [key: string]: NodeJS.Timeout }>({})[0];
 
   useEffect(() => {
     fetchData();
@@ -229,41 +232,8 @@ export default function GradeByQuestionPage() {
     }
   };
 
-  const saveAllGrades = async () => {
-    setSaving(true);
-    setSaveMessage('');
 
-    try {
-      // Save all modified answers (no validation - allow partial grading)
-      for (const answerId in localAnswers) {
-        const answer = localAnswers[answerId];
-        console.log('Saving answer:', answerId, answer);
-        const response = await fetch('/api/answers', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(answer),
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          console.error('Failed to save answer:', error);
-          throw new Error(`Failed to save answer: ${error.details || 'Unknown error'}`);
-        }
-      }
-
-      setSaveMessage('✓ Grades saved successfully!');
-      await fetchData(); // Refresh data
-
-      setTimeout(() => setSaveMessage(''), 3000);
-    } catch (error) {
-      setSaveMessage('✗ Error saving grades');
-      console.error('Error saving grades:', error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const selectCriteriaLevel = (answerId: string, rubric: Rubric, levelIndex: number) => {
+  const selectCriteriaLevel = async (answerId: string, rubric: Rubric, levelIndex: number) => {
     const answer = localAnswers[answerId];
     const level = rubric.levels[levelIndex];
 
@@ -299,14 +269,44 @@ export default function GradeByQuestionPage() {
 
     const averagePercentage = rubrics.length > 0 ? totalPercentage / rubrics.length : 0;
 
+    const updatedAnswer = {
+      ...answer,
+      criteriaEvaluations: updatedEvaluations,
+      pointsPercentage: averagePercentage,
+    };
+
+    // Update local state
     setLocalAnswers({
       ...localAnswers,
-      [answerId]: {
-        ...answer,
-        criteriaEvaluations: updatedEvaluations,
-        pointsPercentage: averagePercentage,
-      },
+      [answerId]: updatedAnswer,
     });
+
+    // Auto-save to database
+    setSaving(true);
+    setSaveMessage('Saving...');
+    try {
+      const response = await fetch('/api/answers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedAnswer),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Failed to auto-save answer:', error);
+        setSaveMessage('✗ Auto-save failed');
+        setTimeout(() => setSaveMessage(''), 3000);
+      } else {
+        setSaveMessage('✓ Saved');
+        setTimeout(() => setSaveMessage(''), 2000);
+      }
+    } catch (error) {
+      console.error('Error auto-saving answer:', error);
+      setSaveMessage('✗ Auto-save failed');
+      setTimeout(() => setSaveMessage(''), 3000);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const updateCriteriaFeedback = (answerId: string, rubricId: string, feedback: string) => {
@@ -320,13 +320,49 @@ export default function GradeByQuestionPage() {
         feedback,
       };
 
+      const updatedAnswer = {
+        ...answer,
+        criteriaEvaluations: updatedEvaluations,
+      };
+
       setLocalAnswers({
         ...localAnswers,
-        [answerId]: {
-          ...answer,
-          criteriaEvaluations: updatedEvaluations,
-        },
+        [answerId]: updatedAnswer,
       });
+
+      // Debounce auto-save for feedback (wait 1 second after typing stops)
+      const debounceKey = `${answerId}-${rubricId}`;
+      if (feedbackDebounceTimerRef[debounceKey]) {
+        clearTimeout(feedbackDebounceTimerRef[debounceKey]);
+      }
+      
+      feedbackDebounceTimerRef[debounceKey] = setTimeout(async () => {
+        setSaving(true);
+        setSaveMessage('Saving...');
+        try {
+          const response = await fetch('/api/answers', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedAnswer),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to auto-save feedback:', error);
+            setSaveMessage('✗ Auto-save failed');
+            setTimeout(() => setSaveMessage(''), 3000);
+          } else {
+            setSaveMessage('✓ Saved');
+            setTimeout(() => setSaveMessage(''), 2000);
+          }
+        } catch (error) {
+          console.error('Error auto-saving feedback:', error);
+          setSaveMessage('✗ Auto-save failed');
+          setTimeout(() => setSaveMessage(''), 3000);
+        } finally {
+          setSaving(false);
+        }
+      }, 1000);
     }
   };
 
@@ -700,19 +736,11 @@ export default function GradeByQuestionPage() {
                 </button>
               )}
 
-              <button
-                onClick={saveAllGrades}
-                disabled={saving}
-                className={`px-6 py-2 rounded-lg font-semibold text-white transition-colors ${
-                  saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-                }`}
-              >
-                {saving ? 'Saving...' : '💾 Save'}
-              </button>
+              {/* Auto-save status indicator */}
               {saveMessage && (
                 <span
                   className={`font-semibold text-sm ${
-                    saveMessage.includes('✓') ? 'text-green-600' : 'text-red-600'
+                    saveMessage.includes('✓') ? 'text-green-600' : saveMessage.includes('Saving') ? 'text-blue-600' : 'text-red-600'
                   }`}
                 >
                   {saveMessage}

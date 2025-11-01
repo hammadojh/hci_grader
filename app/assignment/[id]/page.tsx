@@ -40,6 +40,12 @@ interface Submission {
   submittedAt: string;
 }
 
+interface SubmissionStats {
+  submissionId: string;
+  gradedCount: number;
+  totalCount: number;
+}
+
 export default function AssignmentDetail() {
   const params = useParams();
   const assignmentId = params.id as string;
@@ -48,6 +54,7 @@ export default function AssignmentDetail() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [activeTab, setActiveTab] = useState<'questions' | 'submissions'>('questions');
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [submissionStats, setSubmissionStats] = useState<SubmissionStats[]>([]);
 
   // Question form state
   const [showQuestionForm, setShowQuestionForm] = useState(false);
@@ -144,6 +151,15 @@ export default function AssignmentDetail() {
     questions.forEach((q) => fetchRubrics(q._id));
   }, [questions]);
 
+  // Cleanup polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (batchPollingInterval) {
+        clearInterval(batchPollingInterval);
+      }
+    };
+  }, [batchPollingInterval]);
+
   const fetchAssignment = async () => {
     const res = await fetch(`/api/assignments/${assignmentId}`);
     const data = await res.json();
@@ -166,6 +182,54 @@ export default function AssignmentDetail() {
     const res = await fetch(`/api/submissions?assignmentId=${assignmentId}`);
     const data = await res.json();
     setSubmissions(data);
+    
+    // Fetch stats for each submission
+    await fetchSubmissionStats(data);
+  };
+
+  const fetchSubmissionStats = async (submissionsList: Submission[]) => {
+    const stats: SubmissionStats[] = [];
+    
+    for (const submission of submissionsList) {
+      try {
+        const answersRes = await fetch(`/api/answers?submissionId=${submission._id}`);
+        const answers = await answersRes.json();
+        
+        // Count graded answers (those with criteriaEvaluations that have been filled out)
+        // An answer is considered "graded" only if it has at least one criteria evaluation
+        const gradedCount = answers.filter((answer: any) => 
+          answer.criteriaEvaluations && answer.criteriaEvaluations.length > 0
+        ).length;
+        
+        stats.push({
+          submissionId: submission._id,
+          gradedCount,
+          totalCount: answers.length,
+        });
+      } catch (error) {
+        console.error(`Failed to fetch stats for submission ${submission._id}:`, error);
+        stats.push({
+          submissionId: submission._id,
+          gradedCount: 0,
+          totalCount: 0,
+        });
+      }
+    }
+    
+    setSubmissionStats(stats);
+  };
+
+  const getSubmissionStat = (submissionId: string) => {
+    return submissionStats.find(s => s.submissionId === submissionId) || { gradedCount: 0, totalCount: 0 };
+  };
+
+  const getOverallStats = () => {
+    const totalStudents = submissions.length;
+    const totalQuestions = questions.length * submissions.length;
+    const totalGraded = submissionStats.reduce((sum, stat) => sum + stat.gradedCount, 0);
+    const progress = totalQuestions > 0 ? Math.round((totalGraded / totalQuestions) * 100) : 0;
+    
+    return { totalStudents, totalGraded, totalQuestions, progress };
   };
 
   const getTotalPercentage = () => {
@@ -701,16 +765,20 @@ export default function AssignmentDetail() {
   };
 
   const closeBatchUpload = () => {
+    // Force stop polling first
+    if (batchPollingInterval) {
+      clearInterval(batchPollingInterval);
+      setBatchPollingInterval(null);
+    }
+    
+    // Reset all state
     setShowBatchUpload(false);
     setSelectedBatchFiles([]);
     setBatchUploadId(null);
     setBatchStatus(null);
     setIsProcessingBatch(false);
-    if (batchPollingInterval) {
-      clearInterval(batchPollingInterval);
-      setBatchPollingInterval(null);
-    }
-    // Refresh submissions
+    
+    // Refresh submissions list
     fetchSubmissions();
   };
 
@@ -1397,6 +1465,64 @@ export default function AssignmentDetail() {
 
           {activeTab === 'submissions' && (
             <div>
+              {/* Stats Section */}
+              {submissions.length > 0 && (
+                <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Total Students */}
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-blue-600">Total Students</p>
+                        <p className="text-3xl font-bold text-blue-900 mt-1">{getOverallStats().totalStudents}</p>
+                      </div>
+                      <div className="text-4xl">👥</div>
+                    </div>
+                  </div>
+
+                  {/* Total Answers */}
+                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-purple-600">Total Answers</p>
+                        <p className="text-3xl font-bold text-purple-900 mt-1">{getOverallStats().totalQuestions}</p>
+                      </div>
+                      <div className="text-4xl">📝</div>
+                    </div>
+                  </div>
+
+                  {/* Graded Answers */}
+                  <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-green-600">Graded Answers</p>
+                        <p className="text-3xl font-bold text-green-900 mt-1">
+                          {getOverallStats().totalGraded}
+                          <span className="text-lg text-green-700">/{getOverallStats().totalQuestions}</span>
+                        </p>
+                      </div>
+                      <div className="text-4xl">✅</div>
+                    </div>
+                  </div>
+
+                  {/* Overall Progress */}
+                  <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-indigo-600">Overall Progress</p>
+                        <p className="text-3xl font-bold text-indigo-900 mt-1">{getOverallStats().progress}%</p>
+                      </div>
+                      <div className="text-4xl">📊</div>
+                    </div>
+                    <div className="w-full bg-indigo-200 rounded-full h-2 mt-2">
+                      <div
+                        className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${getOverallStats().progress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-900">Submissions & Grading</h2>
                 <div className="flex gap-3">
@@ -1733,18 +1859,60 @@ Answer here..."
               )}
 
               <div className="space-y-6">
-                {submissions.map((submission) => (
+                {submissions.map((submission) => {
+                  const stats = getSubmissionStat(submission._id);
+                  const completionPercentage = stats.totalCount > 0 
+                    ? Math.round((stats.gradedCount / stats.totalCount) * 100) 
+                    : 0;
+                  
+                  return (
                   <div
                     key={submission._id}
                     className="border border-gray-200 rounded-lg p-6 hover:shadow-md hover:border-indigo-300 transition-all"
                   >
                     <div className="flex justify-between items-start">
-                      <div>
+                      <div className="flex-1">
                         <h3 className="text-lg font-bold text-gray-800">{submission.studentName}</h3>
                         <p className="text-gray-600">{submission.studentEmail}</p>
                         <p className="text-sm text-gray-500 mt-1">
                           Submitted: {new Date(submission.submittedAt).toLocaleString()}
                         </p>
+                        
+                        {/* Completion Status */}
+                        <div className="mt-3 flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-gray-700">Completed questions:</span>
+                            <span className={`text-sm font-bold ${
+                              completionPercentage === 100 ? 'text-green-600' :
+                              completionPercentage > 0 ? 'text-yellow-600' :
+                              'text-gray-500'
+                            }`}>
+                              {stats.gradedCount} / {stats.totalCount}
+                            </span>
+                          </div>
+                          
+                          {/* Progress Bar */}
+                          <div className="flex-1 max-w-xs">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className={`h-2 rounded-full transition-all duration-300 ${
+                                  completionPercentage === 100 ? 'bg-green-600' :
+                                  completionPercentage > 0 ? 'bg-yellow-500' :
+                                  'bg-gray-400'
+                                }`}
+                                style={{ width: `${completionPercentage}%` }}
+                              />
+                            </div>
+                          </div>
+                          
+                          <span className={`text-xs font-semibold ${
+                            completionPercentage === 100 ? 'text-green-600' :
+                            completionPercentage > 0 ? 'text-yellow-600' :
+                            'text-gray-500'
+                          }`}>
+                            {completionPercentage}%
+                          </span>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -1768,7 +1936,8 @@ Answer here..."
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 {submissions.length === 0 && (
                   <p className="text-gray-500 text-center py-8">
                     No submissions yet. Add a submission to get started!

@@ -1,24 +1,28 @@
 import { Schema, model, models } from 'mongoose';
 
 export interface ISettings {
-    _id?: string;
-    openaiApiKey: string;
-    aiSystemPrompt: string;
-    gradingAgentPrompt: string;
-    createdAt?: Date;
-    updatedAt?: Date;
+  _id?: string;
+  openaiApiKey: string;
+  aiSystemPrompt: string;
+  gradingAgentPrompt: string;
+  // AI Extraction preferences
+  extractRubrics?: boolean;
+  splitIntoQuestions?: boolean;
+  extractionContext?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const SettingsSchema = new Schema<ISettings>(
-    {
-        openaiApiKey: {
-            type: String,
-            required: true,
-        },
-        aiSystemPrompt: {
-            type: String,
-            required: true,
-            default: `You are an expert educational assessment designer. Your role is to help instructors create comprehensive, fair, and well-structured rubrics for grading assignments.
+  {
+    openaiApiKey: {
+      type: String,
+      required: true,
+    },
+    aiSystemPrompt: {
+      type: String,
+      required: true,
+      default: `You are an expert educational assessment designer. Your role is to help instructors create comprehensive, fair, and well-structured rubrics for grading assignments.
 
 When creating rubrics:
 1. Consider the learning objectives and what skills/knowledge are being assessed
@@ -35,11 +39,11 @@ For each criterion, provide:
 - Percentage weights that reflect the relative importance
 
 Always aim for rubrics that are practical, fair, and promote learning.`,
-        },
-        gradingAgentPrompt: {
-            type: String,
-            required: true,
-            default: `You are an expert grading assistant. Your task is to evaluate a student's answer based on the provided rubrics.
+    },
+    gradingAgentPrompt: {
+      type: String,
+      required: true,
+      default: `You are an expert grading assistant. Your task is to evaluate a student's answer based on the provided rubrics.
 
 For each criteria in the rubric, you must select the most appropriate level based on the student's answer quality.
 
@@ -60,11 +64,23 @@ Return your evaluation as a JSON object with the following structure:
 }
 
 Be objective and consistent in your evaluation.`,
-        },
     },
-    {
-        timestamps: true,
-    }
+    extractRubrics: {
+      type: Boolean,
+      default: true,
+    },
+    splitIntoQuestions: {
+      type: Boolean,
+      default: true,
+    },
+    extractionContext: {
+      type: String,
+      default: '',
+    },
+  },
+  {
+    timestamps: true,
+  }
 );
 
 export const Settings = models.Settings || model<ISettings>('Settings', SettingsSchema);

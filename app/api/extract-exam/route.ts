@@ -97,6 +97,9 @@ export async function POST(request: NextRequest) {
     // Check if this is a text/markdown submission or file upload
     const contentType = request.headers.get('content-type');
     let extractedText = '';
+    let extractRubrics = true;
+    let splitIntoQuestions = true;
+    let customContext = '';
 
     if (contentType?.includes('application/json')) {
       // Handle direct text input
@@ -108,6 +111,10 @@ export async function POST(request: NextRequest) {
         );
       }
       extractedText = body.text;
+      // Get extraction options from JSON body
+      if (body.extractRubrics !== undefined) extractRubrics = body.extractRubrics;
+      if (body.splitIntoQuestions !== undefined) splitIntoQuestions = body.splitIntoQuestions;
+      if (body.customContext) customContext = body.customContext;
     } else {
       // Handle file upload (PDF or Markdown)
       const formData = await request.formData();
@@ -119,6 +126,15 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
+      // Get extraction options from FormData
+      const extractRubricsParam = formData.get('extractRubrics');
+      const splitIntoQuestionsParam = formData.get('splitIntoQuestions');
+      const customContextParam = formData.get('customContext');
+      
+      if (extractRubricsParam !== null) extractRubrics = extractRubricsParam === 'true';
+      if (splitIntoQuestionsParam !== null) splitIntoQuestions = splitIntoQuestionsParam === 'true';
+      if (customContextParam) customContext = customContextParam as string;
 
       // Check if file is PDF or Markdown
       const isMarkdown = file.type === 'text/markdown' || 
@@ -167,41 +183,62 @@ export async function POST(request: NextRequest) {
       apiKey: settings.openaiApiKey,
     });
 
-    // Use GPT to structure the questions and rubrics
-    console.log('Structuring questions and rubrics...');
-    const structureCompletion = await openai.chat.completions.create({
-      model: 'gpt-5',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert at analyzing exam documents and extracting structured information.
-          
-Your task is to analyze the provided exam text and extract:
-1. All questions with their text and point values
-2. Grading rubrics or criteria for each question (if available in the document)
+    // Build dynamic prompt based on options
+    let systemPrompt = `You are an expert at analyzing exam documents and extracting structured information.`;
+    
+    if (customContext) {
+      systemPrompt += `\n\nAdditional Context from User:\n${customContext}`;
+    }
 
-Guidelines:
+    systemPrompt += `\n\nYour task is to analyze the provided exam text and extract:`;
+    
+    if (splitIntoQuestions) {
+      systemPrompt += `\n1. All questions with their text and point values (split into separate questions)`;
+    } else {
+      systemPrompt += `\n1. The exam content as a single question (do not split into multiple questions)`;
+    }
+    
+    if (extractRubrics) {
+      systemPrompt += `\n2. Grading rubrics or criteria for each question`;
+    }
+
+    systemPrompt += `\n\nGuidelines:`;
+    
+    if (splitIntoQuestions) {
+      systemPrompt += `
 - Extract each question as a separate item
 - If point values are given, calculate the percentage each question represents of the total
 - If no point values are given, distribute points evenly
-- Create basic rubrics if none are explicitly provided (use common assessment criteria)
+- Ensure all percentages in questions sum to 100%`;
+    } else {
+      systemPrompt += `
+- Keep all content as a single question
+- Set pointsPercentage to 100 for the single question`;
+    }
+    
+    if (extractRubrics) {
+      systemPrompt += `
+- Create rubrics for assessment (use document rubrics if available, otherwise create appropriate ones)
 - Each rubric should have 3-5 performance levels
-- Ensure all percentages in questions sum to 100%
-- Each rubric level's percentage should range from 0-100, where 100 is perfect performance`,
-        },
-        {
-          role: 'user',
-          content: `Here is the extracted exam content:
+- Each rubric level's percentage should range from 0-100, where 100 is perfect performance`;
+    } else {
+      systemPrompt += `
+- Do not create or include any rubrics in the response
+- Set the rubrics array to empty []`;
+    }
 
-${extractedText}
-
-Please analyze this and return a JSON object with the following structure:
-{
+    let userPrompt = `Here is the extracted exam content:\n\n${extractedText}\n\nPlease analyze this and return a JSON object with the following structure:\n{`;
+    
+    if (splitIntoQuestions) {
+      userPrompt += `
   "questions": [
     {
       "questionText": "The full text of the question",
       "questionNumber": 1,
-      "pointsPercentage": 25.0,
+      "pointsPercentage": 25.0,`;
+      
+      if (extractRubrics) {
+        userPrompt += `
       "rubrics": [
         {
           "criteriaName": "Accuracy",
@@ -228,18 +265,95 @@ Please analyze this and return a JSON object with the following structure:
             }
           ]
         }
-      ]
+      ]`;
+      } else {
+        userPrompt += `
+      "rubrics": []`;
+      }
+      
+      userPrompt += `
     }
-  ],
+  ],`;
+    } else {
+      userPrompt += `
+  "questions": [
+    {
+      "questionText": "The full exam content",
+      "questionNumber": 1,
+      "pointsPercentage": 100.0,`;
+      
+      if (extractRubrics) {
+        userPrompt += `
+      "rubrics": [
+        {
+          "criteriaName": "Overall Quality",
+          "levels": [
+            {
+              "name": "Excellent",
+              "description": "Comprehensive and accurate response",
+              "percentage": 100
+            },
+            {
+              "name": "Good",
+              "description": "Mostly complete with minor issues",
+              "percentage": 75
+            },
+            {
+              "name": "Fair",
+              "description": "Partial understanding demonstrated",
+              "percentage": 50
+            },
+            {
+              "name": "Poor",
+              "description": "Incomplete or inaccurate response",
+              "percentage": 25
+            }
+          ]
+        }
+      ]`;
+      } else {
+        userPrompt += `
+      "rubrics": []`;
+      }
+      
+      userPrompt += `
+    }
+  ],`;
+    }
+    
+    userPrompt += `
   "totalPoints": 100,
   "summary": "Brief summary of the exam structure"
 }
 
-IMPORTANT: 
-- The sum of all question pointsPercentage values MUST equal 100
+IMPORTANT:`;
+    
+    if (splitIntoQuestions) {
+      userPrompt += `
+- The sum of all question pointsPercentage values MUST equal 100`;
+    }
+    
+    if (extractRubrics) {
+      userPrompt += `
 - Each rubric level percentage should be 0-100 (not cumulative)
-- Include at least one rubric per question
-- If the document has explicit rubrics, use those; otherwise create appropriate ones`,
+- Include at least one rubric per question if rubrics are requested`;
+    } else {
+      userPrompt += `
+- Set rubrics to an empty array [] for each question`;
+    }
+
+    // Use GPT to structure the questions and rubrics
+    console.log('Structuring questions and rubrics...');
+    const structureCompletion = await openai.chat.completions.create({
+      model: 'gpt-5',
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
+        {
+          role: 'user',
+          content: userPrompt,
         },
       ],
       response_format: { type: 'json_object' },

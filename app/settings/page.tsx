@@ -8,6 +8,9 @@ interface Settings {
     openaiApiKey: string;
     aiSystemPrompt: string;
     gradingAgentPrompt: string;
+    extractRubrics?: boolean;
+    splitIntoQuestions?: boolean;
+    extractionContext?: string;
 }
 
 export default function SettingsPage() {
@@ -15,6 +18,9 @@ export default function SettingsPage() {
     const [openaiApiKey, setOpenaiApiKey] = useState('');
     const [aiSystemPrompt, setAiSystemPrompt] = useState('');
     const [gradingAgentPrompt, setGradingAgentPrompt] = useState('');
+    const [extractRubrics, setExtractRubrics] = useState(true);
+    const [splitIntoQuestions, setSplitIntoQuestions] = useState(true);
+    const [extractionContext, setExtractionContext] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
@@ -31,6 +37,9 @@ export default function SettingsPage() {
             setOpenaiApiKey(data.openaiApiKey || '');
             setAiSystemPrompt(data.aiSystemPrompt || '');
             setGradingAgentPrompt(data.gradingAgentPrompt || '');
+            setExtractRubrics(data.extractRubrics !== undefined ? data.extractRubrics : true);
+            setSplitIntoQuestions(data.splitIntoQuestions !== undefined ? data.splitIntoQuestions : true);
+            setExtractionContext(data.extractionContext || '');
         } catch (error) {
             console.error('Failed to fetch settings:', error);
         }
@@ -49,6 +58,9 @@ export default function SettingsPage() {
                     openaiApiKey,
                     aiSystemPrompt,
                     gradingAgentPrompt,
+                    extractRubrics,
+                    splitIntoQuestions,
+                    extractionContext,
                 }),
             });
 
@@ -230,6 +242,65 @@ Be objective and consistent in your evaluation.`;
                             </div>
                         </div>
 
+                        {/* AI Extraction Default Preferences Section */}
+                        <div className="mb-6">
+                            <h2 className="text-2xl font-bold text-gray-900 mb-4">AI Exam Extraction Defaults</h2>
+                            <p className="text-sm text-gray-600 mb-4">
+                                Configure default settings for the AI exam extraction feature. These can be overridden per upload.
+                            </p>
+
+                            <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                {/* Split into questions toggle */}
+                                <label className="flex items-start cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={splitIntoQuestions}
+                                        onChange={(e) => setSplitIntoQuestions(e.target.checked)}
+                                        className="mt-1 w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                    />
+                                    <div className="ml-3">
+                                        <span className="text-sm font-semibold text-gray-700">Split into separate questions by default</span>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            When enabled, AI will try to identify and split exam content into individual questions. When disabled, content will be kept as a single question.
+                                        </p>
+                                    </div>
+                                </label>
+
+                                {/* Extract rubrics toggle */}
+                                <label className="flex items-start cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={extractRubrics}
+                                        onChange={(e) => setExtractRubrics(e.target.checked)}
+                                        className="mt-1 w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                    />
+                                    <div className="ml-3">
+                                        <span className="text-sm font-semibold text-gray-700">Extract/generate rubrics by default</span>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            When enabled, AI will extract rubrics from the document or generate appropriate ones. When disabled, no rubrics will be created.
+                                        </p>
+                                    </div>
+                                </label>
+
+                                {/* Default extraction context */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                        Default context for AI extraction (optional)
+                                    </label>
+                                    <textarea
+                                        value={extractionContext}
+                                        onChange={(e) => setExtractionContext(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                                        rows={3}
+                                        placeholder="E.g., 'Exams are typically for HCI courses focusing on design principles and user research.'"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        This context will be used by default to help AI better understand exam structure. Can be overridden per upload.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Save Button and Message */}
                         <div className="flex items-center gap-4">
                             <button
@@ -252,16 +323,30 @@ Be objective and consistent in your evaluation.`;
 
                 {/* Information Section */}
                 <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6 mt-6">
-                    <h3 className="text-lg font-bold text-indigo-900 mb-2">About AI Rubric Helper</h3>
+                    <h3 className="text-lg font-bold text-indigo-900 mb-2">About AI Features</h3>
                     <p className="text-indigo-800 text-sm mb-2">
-                        The AI Rubric Helper uses advanced language models to assist you in creating comprehensive rubrics. It can:
+                        The AI-powered features use advanced language models to assist you with:
                     </p>
-                    <ul className="text-indigo-800 text-sm space-y-1 ml-6 list-disc">
-                        <li>Generate rubric criteria based on your assignment description</li>
-                        <li>Create detailed performance levels with clear descriptors</li>
-                        <li>Suggest appropriate weights for different criteria</li>
-                        <li>Refine rubrics based on your feedback</li>
-                    </ul>
+                    
+                    <div className="mb-3">
+                        <h4 className="text-sm font-semibold text-indigo-900 mb-1">AI Rubric Helper</h4>
+                        <ul className="text-indigo-800 text-sm space-y-1 ml-6 list-disc">
+                            <li>Generate rubric criteria based on your assignment description</li>
+                            <li>Create detailed performance levels with clear descriptors</li>
+                            <li>Suggest appropriate weights for different criteria</li>
+                            <li>Refine rubrics based on your feedback</li>
+                        </ul>
+                    </div>
+                    
+                    <div>
+                        <h4 className="text-sm font-semibold text-indigo-900 mb-1">AI Exam Extraction</h4>
+                        <ul className="text-indigo-800 text-sm space-y-1 ml-6 list-disc">
+                            <li>Extract questions from PDF or markdown exam files</li>
+                            <li>Automatically generate or extract rubrics from exam documents</li>
+                            <li>Parse point values and distribute percentages</li>
+                            <li>Customize extraction behavior with per-upload options</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>

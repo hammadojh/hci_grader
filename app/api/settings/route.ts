@@ -51,6 +51,9 @@ For each criterion, provide:
 
 Always aim for rubrics that are practical, fair, and promote learning.`,
                 gradingAgentPrompt: defaultGradingAgentPrompt,
+                extractRubrics: true,
+                splitIntoQuestions: true,
+                extractionContext: '',
             });
         } else {
             // Ensure gradingAgentPrompt exists (for existing settings documents)
@@ -58,6 +61,17 @@ Always aim for rubrics that are practical, fair, and promote learning.`,
                 settings.gradingAgentPrompt = defaultGradingAgentPrompt;
                 await settings.save();
             }
+            // Ensure extraction settings exist with defaults
+            if (settings.extractRubrics === undefined) {
+                settings.extractRubrics = true;
+            }
+            if (settings.splitIntoQuestions === undefined) {
+                settings.splitIntoQuestions = true;
+            }
+            if (settings.extractionContext === undefined) {
+                settings.extractionContext = '';
+            }
+            await settings.save();
         }
 
         return NextResponse.json(settings);
@@ -81,6 +95,15 @@ export async function POST(request: NextRequest) {
             existingSettings.aiSystemPrompt = body.aiSystemPrompt;
             if (body.gradingAgentPrompt) {
                 existingSettings.gradingAgentPrompt = body.gradingAgentPrompt;
+            }
+            if (body.extractRubrics !== undefined) {
+                existingSettings.extractRubrics = body.extractRubrics;
+            }
+            if (body.splitIntoQuestions !== undefined) {
+                existingSettings.splitIntoQuestions = body.splitIntoQuestions;
+            }
+            if (body.extractionContext !== undefined) {
+                existingSettings.extractionContext = body.extractionContext;
             }
             await existingSettings.save();
             return NextResponse.json(existingSettings);
@@ -109,6 +132,15 @@ export async function PUT(request: NextRequest) {
         settings.aiSystemPrompt = body.aiSystemPrompt;
         if (body.gradingAgentPrompt) {
             settings.gradingAgentPrompt = body.gradingAgentPrompt;
+        }
+        if (body.extractRubrics !== undefined) {
+            settings.extractRubrics = body.extractRubrics;
+        }
+        if (body.splitIntoQuestions !== undefined) {
+            settings.splitIntoQuestions = body.splitIntoQuestions;
+        }
+        if (body.extractionContext !== undefined) {
+            settings.extractionContext = body.extractionContext;
         }
         await settings.save();
 

@@ -103,6 +103,11 @@ export default function AssignmentDetail() {
   }>>([]);
   const [extractionSummary, setExtractionSummary] = useState('');
   const [extractionError, setExtractionError] = useState('');
+  
+  // Extraction options state
+  const [extractRubrics, setExtractRubrics] = useState(true);
+  const [splitIntoQuestions, setSplitIntoQuestions] = useState(true);
+  const [customContext, setCustomContext] = useState('');
 
   // Submission form state
   const [showSubmissionForm, setShowSubmissionForm] = useState(false);
@@ -980,12 +985,20 @@ export default function AssignmentDetail() {
         response = await fetch('/api/extract-exam', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: pastedText }),
+          body: JSON.stringify({ 
+            text: pastedText,
+            extractRubrics,
+            splitIntoQuestions,
+            customContext,
+          }),
         });
       } else {
         // Send file as FormData
         const formData = new FormData();
         formData.append('file', selectedFile!);
+        formData.append('extractRubrics', extractRubrics.toString());
+        formData.append('splitIntoQuestions', splitIntoQuestions.toString());
+        formData.append('customContext', customContext);
 
         response = await fetch('/api/extract-exam', {
           method: 'POST',
@@ -2000,6 +2013,62 @@ Answer here..."
                       >
                         📝 Paste Text
                       </button>
+                    </div>
+
+                    {/* Extraction Options */}
+                    <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-3">⚙️ Extraction Options</h3>
+                      
+                      <div className="space-y-3">
+                        {/* Split into questions toggle */}
+                        <label className="flex items-start cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={splitIntoQuestions}
+                            onChange={(e) => setSplitIntoQuestions(e.target.checked)}
+                            className="mt-1 w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                          />
+                          <div className="ml-3">
+                            <span className="text-sm font-medium text-gray-700">Split into separate questions</span>
+                            <p className="text-xs text-gray-500">
+                              If unchecked, AI will keep all content as a single question
+                            </p>
+                          </div>
+                        </label>
+
+                        {/* Extract rubrics toggle */}
+                        <label className="flex items-start cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={extractRubrics}
+                            onChange={(e) => setExtractRubrics(e.target.checked)}
+                            className="mt-1 w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                          />
+                          <div className="ml-3">
+                            <span className="text-sm font-medium text-gray-700">Extract/generate rubrics</span>
+                            <p className="text-xs text-gray-500">
+                              If unchecked, no rubrics will be created
+                            </p>
+                          </div>
+                        </label>
+
+                        {/* Custom context input */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Additional context for AI (optional)
+                          </label>
+                          <textarea
+                            value={customContext}
+                            onChange={(e) => setCustomContext(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            rows={3}
+                            placeholder="E.g., 'This is a midterm exam for an HCI course. Focus on design principles and user research methods.'"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Provide additional context to help AI better understand the exam structure
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
                     {/* File Upload Section */}

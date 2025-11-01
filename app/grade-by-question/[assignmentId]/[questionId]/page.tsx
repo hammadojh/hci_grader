@@ -90,6 +90,7 @@ export default function GradeByQuestionPage() {
   const [generatingAgent, setGeneratingAgent] = useState<string | null>(null);
   const [openAgentMenuId, setOpenAgentMenuId] = useState<string | null>(null);
   const [generatingAllAgents, setGeneratingAllAgents] = useState(false);
+  const [creatingAgents, setCreatingAgents] = useState(false);
 
   // Local state for editing
   const [localAnswers, setLocalAnswers] = useState<{ [answerId: string]: Answer }>({});
@@ -194,8 +195,9 @@ export default function GradeByQuestionPage() {
       const agentsRes = await fetch(`/api/grading-agents?questionId=${questionId}`);
       const agentsData = await agentsRes.json();
       
-      // If no agents exist, create 3 default agents
-      if (agentsData.length === 0) {
+      // If no agents exist and not already creating them, create 3 default agents
+      if (agentsData.length === 0 && !creatingAgents) {
+        setCreatingAgents(true); // Prevent concurrent creation
         const defaultAgents = [];
         for (let i = 1; i <= 3; i++) {
           const agentName = `g${i}`;
@@ -221,6 +223,7 @@ export default function GradeByQuestionPage() {
           }
         }
         setGradingAgents(defaultAgents);
+        setCreatingAgents(false); // Reset flag after creation
       } else {
         setGradingAgents(agentsData);
       }

@@ -30,5 +30,8 @@ const GradingAgentSchema = new Schema<IGradingAgent>(
   }
 );
 
+// Add compound unique index to prevent duplicate agents for the same question
+GradingAgentSchema.index({ questionId: 1, name: 1 }, { unique: true });
+
 export const GradingAgent = models.GradingAgent || model<IGradingAgent>('GradingAgent', GradingAgentSchema);
 

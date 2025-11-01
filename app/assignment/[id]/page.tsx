@@ -1449,13 +1449,14 @@ export default function AssignmentDetail() {
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Student Email
+                      Student Email / ID
                     </label>
                     <input
-                      type="email"
+                      type="text"
                       value={studentEmail}
                       onChange={(e) => setStudentEmail(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      placeholder="email@example.com or G202421408"
                       required
                     />
                   </div>

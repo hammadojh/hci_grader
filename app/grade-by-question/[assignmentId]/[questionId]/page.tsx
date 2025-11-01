@@ -65,6 +65,8 @@ interface GradingAgent {
 interface AgentSuggestion {
   agentId: string;
   suggestedLevelIndex: number;
+  justification?: string;
+  improvementSuggestion?: string;
 }
 
 interface AnswerWithSubmission extends Answer {
@@ -504,6 +506,12 @@ export default function GradeByQuestionPage() {
 
         if (response.ok) {
           const result = await response.json();
+          console.log('Agent API Response:', result);
+          
+          // Find the agent name for feedback formatting
+          const agent = gradingAgents.find(a => a._id === agentId);
+          const agentName = agent ? agent.name : 'unknown';
+          console.log('Agent name:', agentName);
           
           // Update state for this specific answer using functional form to get latest state
           setLocalAnswers(prevAnswers => {
@@ -520,13 +528,38 @@ export default function GradeByQuestionPage() {
                 const filteredSuggestions = existingSuggestions.filter(
                   s => s.agentId !== agentId
                 );
+                
+                // Append agent feedback to existing feedback
+                let updatedFeedback = evaluation.feedback || '';
+                console.log('Existing feedback:', updatedFeedback);
+                console.log('Suggestion:', suggestion);
+                if (suggestion.justification || suggestion.improvementSuggestion) {
+                  // Add separator if there's existing feedback
+                  if (updatedFeedback.trim() !== '') {
+                    updatedFeedback += '\n\n----\n\n';
+                  }
+                  
+                  // Format: grader X feedback: ...
+                  updatedFeedback += `${agentName} feedback:\n`;
+                  if (suggestion.justification) {
+                    updatedFeedback += `${suggestion.justification} `;
+                  }
+                  if (suggestion.improvementSuggestion) {
+                    updatedFeedback += `${suggestion.improvementSuggestion}`;
+                  }
+                }
+                console.log('Updated feedback:', updatedFeedback);
+                
                 return {
                   ...evaluation,
+                  feedback: updatedFeedback,
                   agentSuggestions: [
                     ...filteredSuggestions,
                     {
                       agentId,
                       suggestedLevelIndex: suggestion.suggestedLevelIndex,
+                      justification: suggestion.justification,
+                      improvementSuggestion: suggestion.improvementSuggestion,
                     },
                   ],
                 };
@@ -537,29 +570,73 @@ export default function GradeByQuestionPage() {
 
             // Add suggestions for rubrics not yet evaluated
             const evaluatedRubricIds = answer.criteriaEvaluations.map(e => e.rubricId);
+            console.log('Evaluated rubric IDs:', evaluatedRubricIds);
             const newEvaluations = result.suggestions
               .filter((s: any) => !evaluatedRubricIds.includes(s.rubricId))
-              .map((s: any) => ({
-                rubricId: s.rubricId,
-                selectedLevelIndex: s.suggestedLevelIndex,
-                feedback: '',
-                agentSuggestions: [
-                  {
-                    agentId,
-                    suggestedLevelIndex: s.suggestedLevelIndex,
-                  },
-                ],
-              }));
+              .map((s: any) => {
+                // Format feedback for new evaluations
+                let feedbackText = '';
+                console.log('New evaluation suggestion:', s);
+                if (s.justification || s.improvementSuggestion) {
+                  feedbackText = `${agentName} feedback:\n`;
+                  if (s.justification) {
+                    feedbackText += `${s.justification} `;
+                  }
+                  if (s.improvementSuggestion) {
+                    feedbackText += `${s.improvementSuggestion}`;
+                  }
+                }
+                console.log('New evaluation feedback text:', feedbackText);
+                
+                return {
+                  rubricId: s.rubricId,
+                  selectedLevelIndex: s.suggestedLevelIndex,
+                  feedback: feedbackText,
+                  agentSuggestions: [
+                    {
+                      agentId,
+                      suggestedLevelIndex: s.suggestedLevelIndex,
+                      justification: s.justification,
+                      improvementSuggestion: s.improvementSuggestion,
+                    },
+                  ],
+                };
+              });
+
+            const updatedAnswer = {
+              ...answer,
+              criteriaEvaluations: [...updatedEvaluations, ...newEvaluations],
+            };
+            console.log('Final updated answer:', updatedAnswer);
+            console.log('Criteria evaluations with feedback:', updatedAnswer.criteriaEvaluations.map(e => ({ rubricId: e.rubricId, feedback: e.feedback })));
+
+            // Save updated answer to database
+            (async () => {
+              try {
+                await fetch('/api/answers', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(updatedAnswer),
+                });
+              } catch (error) {
+                console.error('Error saving agent feedback:', error);
+              }
+            })();
 
             // Return updated state with this answer's new suggestions
-            return {
+            const newState = {
               ...prevAnswers,
-              [answer._id!]: {
-                ...answer,
-                criteriaEvaluations: [...updatedEvaluations, ...newEvaluations],
-              },
+              [answer._id!]: updatedAnswer,
             };
+            console.log('Returning new state for answer:', answer._id);
+            console.log('New state feedback for this answer:', newState[answer._id!].criteriaEvaluations.map(e => ({ rubricId: e.rubricId, feedback: e.feedback })));
+            return newState;
           });
+          
+          // Log after state update
+          setTimeout(() => {
+            console.log('State after update - localAnswers:', localAnswers[answerWithSubmission._id]);
+          }, 100);
         }
       }
     } catch (error) {
@@ -1021,12 +1098,14 @@ export default function GradeByQuestionPage() {
                                   <div>
                                     <textarea
                                       value={evaluation?.feedback || ''}
-                                      onChange={(e) =>
-                                        updateCriteriaFeedback(answer._id!, rubric._id!, e.target.value)
-                                      }
+                                      onChange={(e) => {
+                                        console.log('Textarea onChange - new value:', e.target.value);
+                                        updateCriteriaFeedback(answer._id!, rubric._id!, e.target.value);
+                                      }}
                                       className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-xs"
                                       rows={2}
                                       placeholder={`Feedback...`}
+                                      onFocus={() => console.log('Textarea focused - current value:', evaluation?.feedback || '')}
                                     />
                                   </div>
                                 </div>

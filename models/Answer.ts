@@ -3,6 +3,8 @@ import mongoose, { Schema, model, models } from 'mongoose';
 export interface IAgentSuggestion {
   agentId: string;
   suggestedLevelIndex: number;
+  justification?: string;
+  improvementSuggestion?: string;
 }
 
 export interface ICriteriaEvaluation {
@@ -32,6 +34,14 @@ const AgentSuggestionSchema = new Schema<IAgentSuggestion>({
   suggestedLevelIndex: {
     type: Number,
     required: true,
+  },
+  justification: {
+    type: String,
+    default: '',
+  },
+  improvementSuggestion: {
+    type: String,
+    default: '',
   },
 }, { _id: false });
 

@@ -4,19 +4,66 @@ import { Settings } from '@/models/Settings';
 import { Question } from '@/models/Question';
 import OpenAI from 'openai';
 
-// Helper to extract text from PDF
-async function extractTextFromPDF(file: File): Promise<string> {
-  try {
-    // For PDFs, we'll use OpenAI's file upload capability or convert to text
-    // Since pdf-parse doesn't work well in Edge runtime, we'll use OpenAI directly
-    const buffer = await file.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
-    
-    return `[PDF Content - Base64 encoded for processing: ${base64.substring(0, 100)}...]`;
-  } catch (error) {
-    console.error('PDF extraction error:', error);
-    throw new Error('Failed to extract text from PDF');
+// Helper to clean AI meta-commentary from extracted text
+function cleanAIMetaText(text: string): string {
+  // Remove common AI meta-text patterns
+  const patterns = [
+    /^Here is the extracted text( content)?.*?:\s*/i,
+    /^This is the extracted( text)? content.*?:\s*/i,
+    /^The extracted text is as follows.*?:\s*/i,
+    /^---+\s*/gm, // Remove markdown separators
+    /This includes all answers.*$/i,
+    /^Below is the( extracted)? text.*?:\s*/i,
+    /^I('ve| have) extracted.*?:\s*/i,
+    /preserving( the)? structure and formatting.*$/im,
+  ];
+  
+  let cleaned = text;
+  for (const pattern of patterns) {
+    cleaned = cleaned.replace(pattern, '');
   }
+  
+  // Trim excessive whitespace
+  cleaned = cleaned.trim();
+  
+  return cleaned;
+}
+
+// Helper to extract student info from text
+function extractStudentInfo(text: string): { name: string; email: string } {
+  let name = '';
+  let email = '';
+  
+  // Look for email patterns
+  const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+  if (emailMatch) {
+    email = emailMatch[1];
+  }
+  
+  // Look for ID patterns (like G202421440)
+  const idMatch = text.match(/([A-Z]\d{9})/);
+  if (idMatch) {
+    email = idMatch[1]; // Use ID as email if no email found
+  }
+  
+  // Look for name patterns (usually at the top of the document)
+  // Try to find a name before a newline or ID/date
+  const namePatterns = [
+    // Name followed by ID or date on same or next line
+    /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s+[A-Z]\d{9}|\s+\d{1,2}\/\d{1,2}\/\d{4})/m,
+    // Name on its own line near the top
+    /^([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*$/m,
+  ];
+  
+  for (const pattern of namePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      name = match[1].trim();
+      break;
+    }
+  }
+  
+  return { name, email };
 }
 
 // Helper to extract text from images using OpenAI Vision
@@ -37,7 +84,7 @@ async function extractTextFromImage(file: File, openaiApiKey: string): Promise<s
           content: [
             {
               type: 'text',
-              text: 'Please extract all text from this image. Preserve the structure and formatting as much as possible. If this is a handwritten or typed exam/assignment submission, extract all the answers and questions visible.'
+              text: 'Extract all text from this image. Return ONLY the actual text content without any commentary. Do NOT add phrases like "Here is the extracted text" or explanations. Just return the raw text exactly as it appears in the image.'
             },
             {
               type: 'image_url',
@@ -51,45 +98,47 @@ async function extractTextFromImage(file: File, openaiApiKey: string): Promise<s
       max_tokens: 4096,
     });
     
-    return response.choices[0]?.message?.content || '';
+    let extractedText = response.choices[0]?.message?.content || '';
+    
+    // Clean up AI meta-commentary
+    extractedText = cleanAIMetaText(extractedText);
+    
+    return extractedText;
   } catch (error) {
     console.error('Image OCR error:', error);
     throw new Error('Failed to extract text from image using OCR');
   }
 }
 
-// Helper to extract text from PDF using OpenAI Vision
-async function extractTextFromPDFWithVision(file: File, openaiApiKey: string): Promise<string> {
+// Helper to extract text from PDF using unpdf (Next.js compatible!)
+async function extractTextFromPDF(file: File): Promise<string> {
   try {
-    const openai = new OpenAI({ apiKey: openaiApiKey });
+    console.log('Extracting text from PDF:', file.name);
     
-    // Convert PDF to base64
-    const buffer = await file.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
+    // Import unpdf - works perfectly in Next.js
+    const { extractText } = await import('unpdf');
     
-    // Use OpenAI to read the PDF content
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'user',
-          content: `Please extract all text from this PDF document. This is a student's exam or assignment submission. Extract all visible text, questions, and answers. Preserve the structure and formatting.
-
-Base64 PDF (first 200 chars): ${base64.substring(0, 200)}...
-
-Please analyze and extract the full text content.`
-        }
-      ],
-      max_tokens: 4096,
-    });
+    // Convert File to ArrayBuffer
+    const bytes = await file.arrayBuffer();
     
-    return response.choices[0]?.message?.content || base64.substring(0, 2000);
+    // Extract text using unpdf
+    const { text, totalPages } = await extractText(bytes);
+    
+    // unpdf returns text as array of pages - join them
+    const fullText = Array.isArray(text) ? text.join('\n\n') : String(text);
+    
+    console.log('PDF extraction complete:');
+    console.log('- Pages:', totalPages);
+    console.log('- Text length:', fullText.length);
+    
+    if (!fullText || fullText.length < 50) {
+      throw new Error('Extracted text is too short or empty - PDF may be scanned image or empty');
+    }
+    
+    return fullText;
   } catch (error) {
-    console.error('PDF Vision extraction error:', error);
-    // Fallback: return truncated base64 for now
-    const buffer = await file.arrayBuffer();
-    const text = new TextDecoder().decode(buffer);
-    return text.substring(0, 5000);
+    console.error('PDF extraction error:', error);
+    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -126,8 +175,8 @@ export async function POST(request: NextRequest) {
       
       // Determine file type and extract text accordingly
       if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
-        // PDF file - use Vision API
-        extractedText = await extractTextFromPDFWithVision(file, settings.openaiApiKey);
+        // PDF file - use direct PDF parser (fast and free!)
+        extractedText = await extractTextFromPDF(file);
         mode = 'file';
       } else if (fileType.startsWith('image/') || 
                  fileName.endsWith('.png') || 
@@ -195,7 +244,36 @@ export async function POST(request: NextRequest) {
     console.log('Extracted text length:', extractedText.length);
     console.log('Extracted text preview:', extractedText.substring(0, 500));
     
-    // Use OpenAI to parse and map the text to questions
+    // SPECIAL CASE: If there's only ONE question, treat it as an essay
+    // Extract the entire text as the answer without AI parsing
+    if (questions.length === 1) {
+      console.log('=== SINGLE QUESTION DETECTED - ESSAY MODE ===');
+      console.log('Using entire extracted text as answer for the single question');
+      
+      // Extract student info from the text
+      const studentInfo = extractStudentInfo(extractedText);
+      console.log('Extracted student info:', studentInfo);
+      
+      const singleAnswer = {
+        questionId: questionsContext[0].questionId,
+        questionNumber: questionsContext[0].questionNumber,
+        questionText: questionsContext[0].questionText,
+        answerText: extractedText.trim(),
+        confidence: 'high',
+      };
+      
+      return NextResponse.json({
+        success: true,
+        answers: [singleAnswer],
+        summary: `Essay submission captured (${extractedText.length} characters)`,
+        warnings: [],
+        extractedText: extractedText.substring(0, 2000) + (extractedText.length > 2000 ? '...' : ''),
+        studentName: studentInfo.name,
+        studentEmail: studentInfo.email,
+      });
+    }
+    
+    // Use OpenAI to parse and map the text to questions (for multi-question assignments)
     const openai = new OpenAI({ apiKey: settings.openaiApiKey });
     
     const systemPrompt = `You are an expert at parsing student exam/assignment submissions and mapping answers to specific questions.
@@ -301,12 +379,18 @@ IMPORTANT:
     console.log('=== COMPLETE ANSWERS ===');
     console.log('Complete answers:', completeAnswers);
     
+    // Extract student info from the text
+    const studentInfo = extractStudentInfo(extractedText);
+    console.log('Extracted student info:', studentInfo);
+    
     return NextResponse.json({
       success: true,
       answers: completeAnswers,
       summary: result.summary || `Parsed ${completeAnswers.filter((a: any) => a.answerText).length} of ${questions.length} answers`,
       warnings: result.warnings || [],
       extractedText: extractedText.substring(0, 2000) + (extractedText.length > 2000 ? '...' : ''), // Show more context
+      studentName: studentInfo.name,
+      studentEmail: studentInfo.email,
     });
     
   } catch (error) {

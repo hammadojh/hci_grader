@@ -602,6 +602,14 @@ export default function AssignmentDetail() {
       setParseSummary(data.summary || 'Submission parsed successfully');
       setParseWarnings(data.warnings || []);
       setExtractedTextPreview(data.extractedText || '');
+      
+      // Auto-populate student name and email if detected
+      if (data.studentName && !studentName) {
+        setStudentName(data.studentName);
+      }
+      if (data.studentEmail && !studentEmail) {
+        setStudentEmail(data.studentEmail);
+      }
 
       // Populate answers state with parsed answers
       const answersObj: { [questionId: string]: string } = {};
@@ -681,6 +689,38 @@ export default function AssignmentDetail() {
     } catch (error) {
       console.error('Delete error:', error);
       alert('Failed to delete submission');
+    }
+  };
+
+  const deleteAllSubmissions = async () => {
+    if (submissions.length === 0) {
+      alert('No submissions to delete');
+      return;
+    }
+
+    const confirmMessage = `Are you sure you want to delete ALL ${submissions.length} submissions? This will also delete all associated answers and cannot be undone!`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    // Double confirmation for safety
+    if (!confirm('This will permanently delete all submissions and their answers. Are you absolutely sure?')) {
+      return;
+    }
+
+    try {
+      // Delete all submissions one by one
+      const deletePromises = submissions.map(sub => 
+        fetch(`/api/submissions/${sub._id}`, { method: 'DELETE' })
+      );
+      
+      await Promise.all(deletePromises);
+      
+      alert('All submissions deleted successfully');
+      fetchSubmissions();
+    } catch (error) {
+      console.error('Failed to delete all submissions:', error);
+      alert('An error occurred while deleting submissions');
     }
   };
 
@@ -1605,12 +1645,20 @@ export default function AssignmentDetail() {
                 <h2 className="text-2xl font-bold text-gray-900">Submissions & Grading</h2>
                 <div className="flex gap-3">
                   {questions.length > 0 && submissions.length > 0 && (
-                    <Link
-                      href={`/grade-by-question/${assignmentId}/${questions[0]._id}`}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
-                    >
-                      📝 Grade by Question
-                    </Link>
+                    <>
+                      <Link
+                        href={`/grade-by-question/${assignmentId}/${questions[0]._id}`}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                      >
+                        📝 Grade by Question
+                      </Link>
+                      <button
+                        onClick={deleteAllSubmissions}
+                        className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                      >
+                        🗑️ Delete All
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={openBatchUpload}
@@ -1701,6 +1749,16 @@ export default function AssignmentDetail() {
                     {/* Upload Mode UI */}
                     {submissionUploadMode === 'upload' && (
                       <div className="bg-white p-4 rounded-lg border border-indigo-200 mb-4">
+                        {/* Essay Mode Info */}
+                        {questions.length === 1 && (
+                          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm text-blue-800">
+                              <span className="font-semibold">📝 Essay Mode:</span> Since this assignment has only one question, 
+                              the entire uploaded text will be captured as the answer. Perfect for essays and long-form responses!
+                            </p>
+                          </div>
+                        )}
+                        
                         <div className="flex border-b border-gray-200 mb-4">
                           <button
                             type="button"
@@ -1823,14 +1881,21 @@ Answer here..."
                         {/* Parse Button */}
                         {((submissionInputMode === 'file' && selectedSubmissionFile) ||
                           ((submissionInputMode === 'text' || submissionInputMode === 'markdown') && pastedSubmissionText.trim())) && (
-                          <button
-                            type="button"
-                            onClick={parseSubmission}
-                            disabled={isParsing}
-                            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold transition-colors w-full mb-3"
-                          >
-                            {isParsing ? '🔄 Parsing with AI... This may take a moment' : '🤖 Parse Submission with AI'}
-                          </button>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={parseSubmission}
+                              disabled={isParsing}
+                              className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold transition-colors w-full mb-2"
+                            >
+                              {isParsing ? '🔄 Parsing with AI... This may take a moment' : '🤖 Parse Submission with AI'}
+                            </button>
+                        {submissionInputMode === 'file' && selectedSubmissionFile?.type === 'application/pdf' && (
+                          <p className="text-xs text-green-600 text-center mb-3">
+                            ✅ PDF text extraction is fast and accurate!
+                          </p>
+                        )}
+                          </div>
                         )}
 
                         {/* Parse Error */}
@@ -1845,6 +1910,11 @@ Answer here..."
                           <div className="mb-3 space-y-3">
                             <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                               <p className="text-green-800 text-sm font-semibold">✅ {parseSummary}</p>
+                              {(studentName || studentEmail) && (
+                                <p className="text-green-700 text-xs mt-2">
+                                  👤 Auto-detected: {studentName && `Name: ${studentName}`}{studentName && studentEmail && ', '}{studentEmail && `ID/Email: ${studentEmail}`}
+                                </p>
+                              )}
                               {parseWarnings.length > 0 && (
                                 <div className="mt-2">
                                   <p className="text-yellow-700 text-xs font-semibold">⚠️ Warnings:</p>
@@ -1856,7 +1926,7 @@ Answer here..."
                                 </div>
                               )}
                               <p className="text-green-700 text-xs mt-2">
-                                Review and edit the parsed answers below before submitting.
+                                Review and edit the parsed information below before submitting.
                               </p>
                             </div>
                             

@@ -45,35 +45,37 @@ async function extractTextFromImage(file: File, openaiApiKey: string): Promise<s
   }
 }
 
-// Helper to extract text from PDF
-async function extractTextFromPDFWithVision(file: File, openaiApiKey: string): Promise<string> {
+// Helper to extract text from PDF using unpdf (Next.js compatible!)
+async function extractTextFromPDF(file: File): Promise<string> {
   try {
-    const openai = new OpenAI({ apiKey: openaiApiKey });
+    console.log('Extracting text from PDF:', file.name);
     
-    const buffer = await file.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
+    // Import unpdf - works perfectly in Next.js
+    const { extractText } = await import('unpdf');
     
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'user',
-          content: `Please extract all text from this PDF document. This is a student's exam or assignment submission. Extract all visible text, questions, and answers. Preserve the structure and formatting.
-
-Base64 PDF (first 200 chars): ${base64.substring(0, 200)}...
-
-Please analyze and extract the full text content.`
-        }
-      ],
-      max_tokens: 4096,
-    });
+    // Convert File to ArrayBuffer
+    const bytes = await file.arrayBuffer();
     
-    return response.choices[0]?.message?.content || base64.substring(0, 2000);
+    // Extract text using unpdf
+    const { text, totalPages } = await extractText(bytes);
+    
+    // unpdf returns text as array of pages - join them
+    const fullText = Array.isArray(text) ? text.join('\n\n') : String(text);
+    
+    console.log('PDF extraction complete:');
+    console.log('- Pages:', totalPages);
+    console.log('- Text length:', fullText.length);
+    console.log('- First 500 chars:', fullText.substring(0, 500));
+    console.log('- Last 500 chars:', fullText.substring(Math.max(0, fullText.length - 500)));
+    
+    if (!fullText || fullText.length < 50) {
+      throw new Error('Extracted text is too short or empty - PDF may be scanned image or empty');
+    }
+    
+    return fullText;
   } catch (error) {
-    console.error('PDF Vision extraction error:', error);
-    const buffer = await file.arrayBuffer();
-    const text = new TextDecoder().decode(buffer);
-    return text.substring(0, 5000);
+    console.error('PDF extraction error:', error);
+    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -209,7 +211,7 @@ IMPORTANT:
       ],
       response_format: { type: 'json_object' },
       temperature: 0.1,
-      max_tokens: 8192,
+      max_tokens: 16000, // Increased for longer submissions
     });
     
     const result = JSON.parse(completion.choices[0]?.message?.content || '{}');
@@ -287,12 +289,17 @@ export async function POST(request: NextRequest) {
     
     try {
       // Step 1: Extract text from file
+      console.log('=== EXTRACTING TEXT FROM FILE ===');
+      console.log('File name:', file.name);
+      console.log('File type:', file.type);
+      console.log('File size:', file.size);
+      
       let extractedText = '';
       const fileName = file.name.toLowerCase();
       const fileType = file.type.toLowerCase();
       
       if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
-        extractedText = await extractTextFromPDFWithVision(file, settings.openaiApiKey);
+        extractedText = await extractTextFromPDF(file);
       } else if (fileType.startsWith('image/') || 
                  fileName.endsWith('.png') || 
                  fileName.endsWith('.jpg') || 
@@ -307,6 +314,11 @@ export async function POST(request: NextRequest) {
       } else {
         throw new Error('Unsupported file type');
       }
+      
+      console.log('=== TEXT EXTRACTION COMPLETE ===');
+      console.log('Total extracted length:', extractedText.length);
+      console.log('First 1000 chars:', extractedText.substring(0, 1000));
+      console.log('Last 500 chars:', extractedText.substring(Math.max(0, extractedText.length - 500)));
       
       // Update progress: text extracted
       batch.files[fileIndex].currentStep = 'extracting_metadata';
@@ -334,7 +346,25 @@ export async function POST(request: NextRequest) {
       await batch.save();
       
       // Step 4: Parse submission and map to questions
-      const parsedAnswers = await parseSubmission(extractedText, questions, settings.openaiApiKey);
+      let parsedAnswers;
+      
+      // SPECIAL CASE: If there's only ONE question, treat it as an essay
+      // Use the entire text as the answer without AI parsing
+      if (questions.length === 1) {
+        console.log('=== SINGLE QUESTION DETECTED - ESSAY MODE (BATCH) ===');
+        console.log('Using entire extracted text as answer for the single question');
+        
+        parsedAnswers = [{
+          questionId: questions[0]._id.toString(),
+          questionNumber: questions[0].questionNumber,
+          questionText: questions[0].questionText,
+          answerText: extractedText.trim(),
+          confidence: 'high',
+        }];
+      } else {
+        // Multiple questions: use AI to parse and map answers
+        parsedAnswers = await parseSubmission(extractedText, questions, settings.openaiApiKey);
+      }
       
       // Update progress: creating submission
       batch.files[fileIndex].currentStep = 'creating_submission';
@@ -351,12 +381,18 @@ export async function POST(request: NextRequest) {
         extractedText: extractedText.substring(0, 10000), // Store first 10k chars
       });
       
-      // Step 6: Create answers
+      // Step 6: Create answers (skip empty answers)
       for (const answer of parsedAnswers) {
+        // Skip if answer text is empty or whitespace only
+        if (!answer.answerText || !answer.answerText.trim()) {
+          console.log(`Skipping empty answer for question ${answer.questionId}`);
+          continue;
+        }
+        
         await Answer.create({
           submissionId: submission._id,
           questionId: answer.questionId,
-          answerText: answer.answerText,
+          answerText: answer.answerText.trim(),
         });
       }
       

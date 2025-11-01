@@ -588,6 +588,55 @@ export default function GradeByQuestionPage() {
         console.log(`  Processing answer ${i + 1}/${answers.length} (ID: ${answerWithSubmission._id})`);
         
         try {
+          // Collect agent's previous feedback for other students on this question
+          const agentPreviousFeedback = answers
+            .filter(a => a._id !== answerWithSubmission._id) // Exclude current student
+            .map(a => {
+              const evaluations = a.criteriaEvaluations || [];
+              const suggestions: any[] = [];
+              
+              // Extract agent suggestions with their rubricId from evaluations
+              evaluations.forEach(evaluation => {
+                const agentSugs = (evaluation.agentSuggestions || []).filter(s => s.agentId === agentId);
+                agentSugs.forEach(sug => {
+                  suggestions.push({
+                    rubricId: evaluation.rubricId,
+                    suggestedLevelIndex: sug.suggestedLevelIndex,
+                    justification: sug.justification,
+                    improvementSuggestion: sug.improvementSuggestion,
+                  });
+                });
+              });
+              
+              return {
+                answerText: a.answerText,
+                suggestions: suggestions
+              };
+            })
+            .filter(f => f.suggestions.length > 0); // Only include if agent has graded
+          
+          // Fetch all answers for the current student (full assignment context)
+          let studentFullAssignment: any[] = [];
+          try {
+            const allAnswersRes = await fetch(`/api/answers?submissionId=${answerWithSubmission.submissionId}`);
+            if (allAnswersRes.ok) {
+              const allStudentAnswers = await allAnswersRes.json();
+              // Get question texts for context
+              studentFullAssignment = await Promise.all(
+                allStudentAnswers.map(async (ans: any) => {
+                  const q = questions.find(q => q._id === ans.questionId);
+                  return {
+                    questionText: q?.questionText || 'Question text unavailable',
+                    answerText: ans.answerText,
+                    isCurrentQuestion: ans.questionId === questionId,
+                  };
+                })
+              );
+            }
+          } catch (err) {
+            console.warn('Could not fetch full assignment context:', err);
+          }
+          
           const response = await fetch('/api/agent-suggest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -597,6 +646,14 @@ export default function GradeByQuestionPage() {
               currentAnswer: answerWithSubmission,
               allAnswers: answers.map(a => ({ answerText: a.answerText })),
               rubrics: rubrics,
+              // New context additions
+              assignmentContext: {
+                title: assignment?.title || 'Untitled Assignment',
+                description: assignment?.description || '',
+                totalPoints: assignment?.totalPoints || 0,
+              },
+              agentPreviousFeedback: agentPreviousFeedback,
+              studentFullAssignment: studentFullAssignment,
             }),
           });
 
@@ -636,13 +693,16 @@ export default function GradeByQuestionPage() {
                     updatedFeedback += '\n\n----\n\n';
                   }
                   
-                  // Format: grader X (Model Name) feedback: ...
-                  updatedFeedback += `${agentName} (${modelName}) feedback:\n`;
+                  // Format: grader X (Model Name) feedback with sections
+                  updatedFeedback += `${agentName} (${modelName}) feedback:\n\n`;
                   if (suggestion.justification) {
-                    updatedFeedback += `${suggestion.justification} `;
+                    updatedFeedback += `Good things:\n${suggestion.justification}\n`;
                   }
                   if (suggestion.improvementSuggestion) {
-                    updatedFeedback += `${suggestion.improvementSuggestion}`;
+                    if (suggestion.justification) {
+                      updatedFeedback += '\n';
+                    }
+                    updatedFeedback += `Improvement opportunities:\n${suggestion.improvementSuggestion}`;
                   }
                 }
                 console.log('Updated feedback:', updatedFeedback);
@@ -675,12 +735,15 @@ export default function GradeByQuestionPage() {
                 let feedbackText = '';
                 console.log('New evaluation suggestion:', s);
                 if (s.justification || s.improvementSuggestion) {
-                  feedbackText = `${agentName} (${modelName}) feedback:\n`;
+                  feedbackText = `${agentName} (${modelName}) feedback:\n\n`;
                   if (s.justification) {
-                    feedbackText += `${s.justification} `;
+                    feedbackText += `Good things:\n${s.justification}\n`;
                   }
                   if (s.improvementSuggestion) {
-                    feedbackText += `${s.improvementSuggestion}`;
+                    if (s.justification) {
+                      feedbackText += '\n';
+                    }
+                    feedbackText += `Improvement opportunities:\n${s.improvementSuggestion}`;
                   }
                 }
                 console.log('New evaluation feedback text:', feedbackText);

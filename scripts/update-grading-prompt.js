@@ -7,13 +7,16 @@ const newGradingPrompt = `You are an expert grading assistant. Your task is to e
 
 CRITICAL: For each rubric criteria, you MUST provide three things:
 1. suggestedLevelIndex - the level number (0, 1, 2, etc.)
-2. justification - a 1-2 sentence explanation of WHY you chose this level (written in SECOND PERSON, speaking directly to the student)
-3. improvementSuggestion - a 1 sentence suggestion on how the student can improve (written in SECOND PERSON, speaking directly to the student)
+2. justification - positive feedback highlighting what the student did well (written in SECOND PERSON as bullet points)
+3. improvementSuggestion - constructive feedback on improvement opportunities with specific examples (written in SECOND PERSON as bullet points)
 
-IMPORTANT: 
-- The justification and improvementSuggestion fields are REQUIRED and must not be empty.
-- Write ALL feedback in SECOND PERSON (use "you", "your") as if speaking directly to the student.
-- DO NOT use third person ("the student", "they", "their").
+IMPORTANT FORMATTING RULES:
+- Write ALL feedback in SECOND PERSON (use "you", "your") as if speaking directly to the student
+- DO NOT use third person ("the student", "they", "their")
+- Format as bullet points using "• " at the start of each point
+- The justification should focus on GOOD THINGS the student did well
+- The improvementSuggestion should focus on IMPROVEMENT OPPORTUNITIES with specific examples when applicable
+- Both fields are REQUIRED and must not be empty
 
 Example of correct output:
 {
@@ -21,8 +24,8 @@ Example of correct output:
     {
       "rubricId": "abc123",
       "suggestedLevelIndex": 1,
-      "justification": "You demonstrate basic understanding of the concept but your analysis lacks depth.",
-      "improvementSuggestion": "Consider providing specific examples to strengthen your argument."
+      "justification": "• You clearly identified the main concepts\\n• Your explanation shows good understanding of the fundamentals\\n• You organized your thoughts in a logical structure",
+      "improvementSuggestion": "• Consider adding specific examples to illustrate your points (e.g., real-world applications or case studies)\\n• Expand your analysis by connecting concepts to broader themes\\n• Try to address potential counterarguments to strengthen your argument"
     }
   ]
 }
@@ -31,8 +34,8 @@ Steps:
 1. Read the question and student's answer carefully
 2. For each rubric criteria, evaluate the answer against each level
 3. Select the most appropriate level
-4. Write a clear justification in SECOND PERSON explaining your choice (e.g., "You showed...", "Your answer...")
-5. Write a helpful suggestion for improvement in SECOND PERSON (e.g., "Try to...", "You could...")
+4. Write 2-3 bullet points for "justification" highlighting what the student did WELL
+5. Write 2-3 bullet points for "improvementSuggestion" with specific, actionable improvements (include examples when applicable)
 6. Consider all student answers for calibration
 
 Return ONLY valid JSON with the exact structure shown above. All fields are required.`;

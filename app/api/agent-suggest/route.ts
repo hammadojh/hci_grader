@@ -8,7 +8,16 @@ export async function POST(request: NextRequest) {
     await connectDB();
 
     const body = await request.json();
-    const { agentId, questionText, currentAnswer, allAnswers, rubrics } = body;
+    const { 
+      agentId, 
+      questionText, 
+      currentAnswer, 
+      allAnswers, 
+      rubrics,
+      assignmentContext,
+      agentPreviousFeedback,
+      studentFullAssignment 
+    } = body;
     
     // Get agent to determine which model to use
     const agent = await GradingAgent.findById(agentId);
@@ -36,13 +45,16 @@ export async function POST(request: NextRequest) {
 
 CRITICAL: For each rubric criteria, you MUST provide three things:
 1. suggestedLevelIndex - the level number (0, 1, 2, etc.)
-2. justification - a 1-2 sentence explanation of WHY you chose this level (written in SECOND PERSON, speaking directly to the student)
-3. improvementSuggestion - a 1 sentence suggestion on how the student can improve (written in SECOND PERSON, speaking directly to the student)
+2. justification - positive feedback highlighting what the student did well (written in SECOND PERSON as bullet points)
+3. improvementSuggestion - constructive feedback on improvement opportunities with specific examples (written in SECOND PERSON as bullet points)
 
-IMPORTANT: 
-- The justification and improvementSuggestion fields are REQUIRED and must not be empty.
-- Write ALL feedback in SECOND PERSON (use "you", "your") as if speaking directly to the student.
-- DO NOT use third person ("the student", "they", "their").
+IMPORTANT FORMATTING RULES:
+- Write ALL feedback in SECOND PERSON (use "you", "your") as if speaking directly to the student
+- DO NOT use third person ("the student", "they", "their")
+- Format as bullet points using "• " at the start of each point
+- The justification should focus on GOOD THINGS the student did well
+- The improvementSuggestion should focus on IMPROVEMENT OPPORTUNITIES with specific examples when applicable
+- Both fields are REQUIRED and must not be empty
 
 Example of correct output:
 {
@@ -50,8 +62,8 @@ Example of correct output:
     {
       "rubricId": "abc123",
       "suggestedLevelIndex": 1,
-      "justification": "You demonstrate basic understanding of the concept but your analysis lacks depth.",
-      "improvementSuggestion": "Consider providing specific examples to strengthen your argument."
+      "justification": "• You clearly identified the main concepts\\n• Your explanation shows good understanding of the fundamentals\\n• You organized your thoughts in a logical structure",
+      "improvementSuggestion": "• Consider adding specific examples to illustrate your points (e.g., real-world applications or case studies)\\n• Expand your analysis by connecting concepts to broader themes\\n• Try to address potential counterarguments to strengthen your argument"
     }
   ]
 }
@@ -60,8 +72,8 @@ Steps:
 1. Read the question and student's answer carefully
 2. For each rubric criteria, evaluate the answer against each level
 3. Select the most appropriate level
-4. Write a clear justification in SECOND PERSON explaining your choice (e.g., "You showed...", "Your answer...")
-5. Write a helpful suggestion for improvement in SECOND PERSON (e.g., "Try to...", "You could...")
+4. Write 2-3 bullet points for "justification" highlighting what the student did WELL
+5. Write 2-3 bullet points for "improvementSuggestion" with specific, actionable improvements (include examples when applicable)
 6. Consider all student answers for calibration
 
 Return ONLY valid JSON with the exact structure shown above. All fields are required.`;
@@ -71,13 +83,64 @@ Return ONLY valid JSON with the exact structure shown above. All fields are requ
     
     console.log('Using prompt:', settings.gradingAgentPrompt ? 'CUSTOM from settings' : 'DEFAULT with feedback');
     console.log('Prompt length:', systemPrompt.length);
+    console.log('Context includes:');
+    console.log('  - Assignment context:', !!assignmentContext);
+    console.log('  - Agent previous feedback:', agentPreviousFeedback?.length || 0, 'students');
+    console.log('  - Student full assignment:', studentFullAssignment?.length || 0, 'questions');
+    console.log('  - All answers for calibration:', allAnswers?.length || 0, 'students');
+
+    // Build assignment context section
+    let assignmentContextSection = '';
+    if (assignmentContext) {
+      assignmentContextSection = `## Assignment Context:
+Title: ${assignmentContext.title}
+${assignmentContext.description ? `Description: ${assignmentContext.description}\n` : ''}Total Points: ${assignmentContext.totalPoints}
+
+`;
+    }
+
+    // Build agent's previous feedback section
+    let previousFeedbackSection = '';
+    if (agentPreviousFeedback && Array.isArray(agentPreviousFeedback) && agentPreviousFeedback.length > 0) {
+      previousFeedbackSection = `## Your Previous Feedback on Other Students:\n`;
+      previousFeedbackSection += `You have already graded ${agentPreviousFeedback.length} other student(s) for this question. Use these as reference for consistency:\n\n`;
+      
+      agentPreviousFeedback.forEach((feedback: any, idx: number) => {
+        previousFeedbackSection += `Student ${idx + 1} Answer: ${feedback.answerText.substring(0, 200)}${feedback.answerText.length > 200 ? '...' : ''}\n`;
+        if (feedback.suggestions && feedback.suggestions.length > 0) {
+          previousFeedbackSection += `Your Grades:\n`;
+          feedback.suggestions.forEach((sug: any) => {
+            const rubric = rubrics.find((r: any) => r._id === sug.rubricId);
+            previousFeedbackSection += `  - ${rubric?.criteriaName || 'Criteria'}: Level ${sug.suggestedLevelIndex}\n`;
+            if (sug.justification) {
+              previousFeedbackSection += `    Good things: ${sug.justification.substring(0, 100)}...\n`;
+            }
+          });
+        }
+        previousFeedbackSection += '\n';
+      });
+    }
+
+    // Build student's full assignment section
+    let studentFullAssignmentSection = '';
+    if (studentFullAssignment && Array.isArray(studentFullAssignment) && studentFullAssignment.length > 0) {
+      studentFullAssignmentSection = `## Current Student's Full Assignment Submission:\n`;
+      studentFullAssignmentSection += `This student has answered ${studentFullAssignment.length} question(s) in this assignment. Here are all their answers for context:\n\n`;
+      
+      studentFullAssignment.forEach((qa: any, idx: number) => {
+        studentFullAssignmentSection += `Question ${idx + 1}${qa.isCurrentQuestion ? ' (⭐ CURRENT - THE ONE TO GRADE)' : ''}:\n`;
+        studentFullAssignmentSection += `Q: ${qa.questionText}\n`;
+        studentFullAssignmentSection += `A: ${qa.answerText}\n\n`;
+      });
+    }
 
     // Build context with all answers (for calibration)
     let allAnswersContext = '';
     if (allAnswers && Array.isArray(allAnswers) && allAnswers.length > 0) {
-      allAnswersContext = '\n\n### All Student Answers (for calibration):\n';
+      allAnswersContext = `## All Student Answers (for calibration):\n`;
+      allAnswersContext += `There are ${allAnswers.length} total student(s) who submitted answers for this question:\n\n`;
       allAnswers.forEach((ans: any, idx: number) => {
-        allAnswersContext += `\nStudent ${idx + 1}: ${ans.answerText}\n`;
+        allAnswersContext += `Student ${idx + 1}: ${ans.answerText}\n\n`;
       });
     }
 
@@ -93,14 +156,13 @@ Return ONLY valid JSON with the exact structure shown above. All fields are requ
       })
       .join('\n');
 
-    const userPrompt = `## Question:
+    const userPrompt = `${assignmentContextSection}## Question to Grade:
 ${questionText}
 
 ## Rubrics:
 ${rubricsDescription}
-${allAnswersContext}
 
-## Current Student's Answer to Grade:
+${previousFeedbackSection}${allAnswersContext}${studentFullAssignmentSection}## ⭐ Current Student's Answer to Grade (for this question):
 ${currentAnswer.answerText}
 
 Please evaluate this answer and suggest the appropriate level for each criteria. Return ONLY valid JSON.`;
@@ -115,8 +177,20 @@ Please evaluate this answer and suggest the appropriate level for each criteria.
       response_format: { type: 'json_object' },
     });
 
-    const responseText = completion.choices[0].message.content || '{}';
+    let responseText = completion.choices[0].message.content || '{}';
     console.log('OpenAI Raw Response:', responseText);
+    
+    // Strip markdown code blocks if present (some models wrap JSON in ```json ... ```)
+    responseText = responseText.trim();
+    if (responseText.startsWith('```json')) {
+      responseText = responseText.replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
+      console.log('Stripped markdown code blocks');
+    } else if (responseText.startsWith('```')) {
+      responseText = responseText.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '');
+      console.log('Stripped markdown code blocks');
+    }
+    
+    console.log('Cleaned Response:', responseText.substring(0, 100) + '...');
     const evaluation = JSON.parse(responseText);
     console.log('Parsed Evaluation:', evaluation);
     console.log('Suggestions:', evaluation.suggestions);

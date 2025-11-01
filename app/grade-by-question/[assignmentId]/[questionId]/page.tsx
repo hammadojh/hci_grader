@@ -874,7 +874,15 @@ export default function GradeByQuestionPage() {
   const getGradedCount = () => {
     return answers.filter(a => {
       const answer = localAnswers[a._id];
-      return answer && answer.criteriaEvaluations.length === rubrics.length && rubrics.length > 0;
+      if (!answer || !rubrics.length) return false;
+      
+      // Must have evaluations for all rubrics
+      const hasAllEvaluations = answer.criteriaEvaluations.length === rubrics.length;
+      if (!hasAllEvaluations) return false;
+      
+      // All evaluations must be confirmed by user
+      const allConfirmed = answer.criteriaEvaluations.every(e => e.confirmedByUser === true);
+      return allConfirmed;
     }).length;
   };
   
@@ -893,9 +901,16 @@ export default function GradeByQuestionPage() {
         return 'not-graded';
       }
       
-      const gradedCount = answersData.filter((a: Answer) => 
-        a.criteriaEvaluations.length === rubricsData.length && rubricsData.length > 0
-      ).length;
+      // Check if answer is fully graded AND confirmed by user
+      const gradedCount = answersData.filter((a: Answer) => {
+        // Must have evaluations for all rubrics
+        const hasAllEvaluations = a.criteriaEvaluations.length === rubricsData.length && rubricsData.length > 0;
+        if (!hasAllEvaluations) return false;
+        
+        // All evaluations must be confirmed by user (not just AI suggestions)
+        const allConfirmed = a.criteriaEvaluations.every(e => e.confirmedByUser === true);
+        return allConfirmed;
+      }).length;
       
       if (gradedCount === 0) return 'not-graded';
       if (gradedCount === answersData.length) return 'fully-graded';
@@ -1136,14 +1151,17 @@ export default function GradeByQuestionPage() {
             <p className="text-gray-600 text-lg">No submissions for this question yet.</p>
           </div>
         ) : (
-          <div className="flex gap-4">
+          <div className="flex gap-4 h-[calc(100vh-300px)]">
             {/* Left Side - Answers List */}
-            <div className="w-1/5 space-y-3 pr-2">
+            <div className="w-1/5 space-y-3 pr-2 overflow-y-auto h-full scrollbar-thin">
               {answers.map((answerWithSubmission) => {
                 const answer = localAnswers[answerWithSubmission._id] || answerWithSubmission;
                 const submission = answerWithSubmission.submission;
                 const isSelected = selectedAnswerId === answer._id;
-                const isGraded = answer.criteriaEvaluations.length === rubrics.length && rubrics.length > 0;
+                // Check if answer is fully graded AND confirmed
+                const hasAllEvaluations = answer.criteriaEvaluations.length === rubrics.length && rubrics.length > 0;
+                const allConfirmed = hasAllEvaluations && answer.criteriaEvaluations.every(e => e.confirmedByUser === true);
+                const isGraded = allConfirmed;
 
                 return (
                   <div
@@ -1202,7 +1220,7 @@ export default function GradeByQuestionPage() {
             </div>
 
             {/* Middle - Selected Answer Display */}
-            <div className="w-3/5">
+            <div className="w-3/5 overflow-y-auto h-full px-2 scrollbar-thin">
               {selectedAnswerId && localAnswers[selectedAnswerId] ? (
                 <>
                   {(() => {
@@ -1259,7 +1277,7 @@ export default function GradeByQuestionPage() {
             </div>
 
             {/* Right Side - Rubric Grading Panel */}
-            <div className="w-1/5">
+            <div className="w-1/5 overflow-y-auto h-full pl-2 scrollbar-thin">
               {selectedAnswerId && localAnswers[selectedAnswerId] ? (
                 <>
                   {(() => {

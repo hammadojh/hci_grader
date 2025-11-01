@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { Settings } from '@/models/Settings';
+import { getOpenRouterClient, getDefaultModel } from '@/lib/openrouter';
 import { Question } from '@/models/Question';
 import OpenAI from 'openai';
 
@@ -66,10 +66,10 @@ function extractStudentInfo(text: string): { name: string; email: string } {
   return { name, email };
 }
 
-// Helper to extract text from images using OpenAI Vision
-async function extractTextFromImage(file: File, openaiApiKey: string): Promise<string> {
+// Helper to extract text from images using OpenRouter Vision
+async function extractTextFromImage(file: File): Promise<string> {
   try {
-    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const { client: openai } = await getOpenRouterClient();
     
     // Convert image to base64
     const buffer = await file.arrayBuffer();
@@ -77,7 +77,7 @@ async function extractTextFromImage(file: File, openaiApiKey: string): Promise<s
     const mimeType = file.type || 'image/png';
     
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: getDefaultModel('vision'),
       messages: [
         {
           role: 'user',
@@ -106,7 +106,7 @@ async function extractTextFromImage(file: File, openaiApiKey: string): Promise<s
     return extractedText;
   } catch (error) {
     console.error('Image OCR error:', error);
-    throw new Error('Failed to extract text from image using OCR');
+    throw new Error('Failed to extract text from image using vision model');
   }
 }
 
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
                  fileName.endsWith('.gif') || 
                  fileName.endsWith('.webp')) {
         // Image file - use Vision API for OCR
-        extractedText = await extractTextFromImage(file, settings.openaiApiKey);
+        extractedText = await extractTextFromImage(file);
         mode = 'file';
       } else if (fileName.endsWith('.md') || fileName.endsWith('.markdown') || fileType === 'text/markdown') {
         // Markdown file - read as text
@@ -273,8 +273,8 @@ export async function POST(request: NextRequest) {
       });
     }
     
-    // Use OpenAI to parse and map the text to questions (for multi-question assignments)
-    const openai = new OpenAI({ apiKey: settings.openaiApiKey });
+    // Use OpenRouter to parse and map the text to questions (for multi-question assignments)
+    const { client: openai } = await getOpenRouterClient();
     
     const systemPrompt = `You are an expert at parsing student exam/assignment submissions and mapping answers to specific questions.
 
@@ -339,7 +339,7 @@ IMPORTANT:
 - Ensure the JSON is valid and parseable`;
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: getDefaultModel('extraction'),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }

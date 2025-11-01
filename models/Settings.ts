@@ -2,9 +2,14 @@ import { Schema, model, models } from 'mongoose';
 
 export interface ISettings {
   _id?: string;
-  openaiApiKey: string;
+  openaiApiKey?: string; // Optional - kept for backward compatibility
+  openRouterApiKey: string; // Required - primary API for all AI features
   aiSystemPrompt: string;
   gradingAgentPrompt: string;
+  // Default models for grading agents
+  defaultModel1?: string;
+  defaultModel2?: string;
+  defaultModel3?: string;
   // AI Extraction preferences
   extractRubrics?: boolean;
   splitIntoQuestions?: boolean;
@@ -17,7 +22,26 @@ const SettingsSchema = new Schema<ISettings>(
   {
     openaiApiKey: {
       type: String,
+      required: false,
+    },
+    openRouterApiKey: {
+      type: String,
       required: true,
+    },
+    defaultModel1: {
+      type: String,
+      required: false,
+      default: 'openai/gpt-5',
+    },
+    defaultModel2: {
+      type: String,
+      required: false,
+      default: 'google/gemini-2.5-pro',
+    },
+    defaultModel3: {
+      type: String,
+      required: false,
+      default: 'anthropic/claude-4.5-sonnet',
     },
     aiSystemPrompt: {
       type: String,

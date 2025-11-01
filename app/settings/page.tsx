@@ -5,9 +5,13 @@ import Link from 'next/link';
 
 interface Settings {
     _id?: string;
-    openaiApiKey: string;
+    openaiApiKey?: string; // Optional - for PDF extraction only
+    openRouterApiKey: string; // Required - for all AI features
     aiSystemPrompt: string;
     gradingAgentPrompt: string;
+    defaultModel1?: string;
+    defaultModel2?: string;
+    defaultModel3?: string;
     extractRubrics?: boolean;
     splitIntoQuestions?: boolean;
     extractionContext?: string;
@@ -16,14 +20,19 @@ interface Settings {
 export default function SettingsPage() {
     const [settings, setSettings] = useState<Settings | null>(null);
     const [openaiApiKey, setOpenaiApiKey] = useState('');
+    const [openRouterApiKey, setOpenRouterApiKey] = useState('');
     const [aiSystemPrompt, setAiSystemPrompt] = useState('');
     const [gradingAgentPrompt, setGradingAgentPrompt] = useState('');
+  const [defaultModel1, setDefaultModel1] = useState('openai/gpt-5');
+  const [defaultModel2, setDefaultModel2] = useState('google/gemini-2.5-pro');
+  const [defaultModel3, setDefaultModel3] = useState('anthropic/claude-4.5-sonnet');
     const [extractRubrics, setExtractRubrics] = useState(true);
     const [splitIntoQuestions, setSplitIntoQuestions] = useState(true);
     const [extractionContext, setExtractionContext] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
+    const [showOpenRouterApiKey, setShowOpenRouterApiKey] = useState(false);
 
     useEffect(() => {
         fetchSettings();
@@ -35,8 +44,12 @@ export default function SettingsPage() {
             const data = await res.json();
             setSettings(data);
             setOpenaiApiKey(data.openaiApiKey || '');
+            setOpenRouterApiKey(data.openRouterApiKey || '');
             setAiSystemPrompt(data.aiSystemPrompt || '');
             setGradingAgentPrompt(data.gradingAgentPrompt || '');
+      setDefaultModel1(data.defaultModel1 || 'openai/gpt-5');
+      setDefaultModel2(data.defaultModel2 || 'google/gemini-2.5-pro');
+      setDefaultModel3(data.defaultModel3 || 'anthropic/claude-4.5-sonnet');
             setExtractRubrics(data.extractRubrics !== undefined ? data.extractRubrics : true);
             setSplitIntoQuestions(data.splitIntoQuestions !== undefined ? data.splitIntoQuestions : true);
             setExtractionContext(data.extractionContext || '');
@@ -56,8 +69,12 @@ export default function SettingsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     openaiApiKey,
+                    openRouterApiKey,
                     aiSystemPrompt,
                     gradingAgentPrompt,
+                    defaultModel1,
+                    defaultModel2,
+                    defaultModel3,
                     extractRubrics,
                     splitIntoQuestions,
                     extractionContext,
@@ -138,10 +155,119 @@ Be objective and consistent in your evaluation.`;
 
                 <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-200">
                     <form onSubmit={saveSettings}>
-                        {/* OpenAI API Key Section */}
+                        {/* OpenRouter API Key Section - Primary */}
                         <div className="mb-6">
                             <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-2xl font-bold text-gray-900">OpenAI API Configuration</h2>
+                                <h2 className="text-2xl font-bold text-gray-900">OpenRouter API Configuration ⭐</h2>
+                                <a
+                                    href="https://openrouter.ai/keys"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-indigo-600 hover:text-indigo-800 text-sm underline"
+                                >
+                                    Get API Key
+                                </a>
+                            </div>
+
+                            <div className="mb-4">
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                    OpenRouter API Key (Required)
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={showOpenRouterApiKey ? 'text' : 'password'}
+                                        value={openRouterApiKey}
+                                        onChange={(e) => setOpenRouterApiKey(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent pr-24"
+                                        placeholder="sk-or-..."
+                                        required
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOpenRouterApiKey(!showOpenRouterApiKey)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-indigo-600 hover:text-indigo-800 font-semibold"
+                                    >
+                                        {showOpenRouterApiKey ? 'Hide' : 'Show'}
+                                    </button>
+                                </div>
+                                <p className="text-sm text-gray-500 mt-2">
+                                    <strong>Required:</strong> OpenRouter provides unified access to models from OpenAI, Google, Anthropic, and more with a single API key.
+                                    All AI features (rubric generation, grading agents, exam extraction, etc.) use OpenRouter.
+                                </p>
+                            </div>
+
+                            {/* Default Models for Grading Agents */}
+                            <div className="mt-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-3">Default Models for Grading Agents</h3>
+                                <p className="text-sm text-gray-600 mb-4">
+                                    Configure which AI models to use for each of the three default grading agents. You can change these later on the grading page.
+                                </p>
+                                
+                                <div className="space-y-4">
+                                    {/* Agent 1 Model */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                            Agent 1 Default Model
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={defaultModel1}
+                                            onChange={(e) => setDefaultModel1(e.target.value)}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                            placeholder="e.g., openai/gpt-5"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Example: openai/gpt-5 🔥 (Latest), openai/gpt-4o, openai/o1-preview
+                                        </p>
+                                    </div>
+
+                                    {/* Agent 2 Model */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                            Agent 2 Default Model
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={defaultModel2}
+                                            onChange={(e) => setDefaultModel2(e.target.value)}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                            placeholder="e.g., google/gemini-2.5-pro"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Example: google/gemini-2.5-pro 🔥 (Latest), google/gemini-2.0-flash-exp:free
+                                        </p>
+                                    </div>
+
+                                    {/* Agent 3 Model */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                            Agent 3 Default Model
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={defaultModel3}
+                                            onChange={(e) => setDefaultModel3(e.target.value)}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                            placeholder="e.g., anthropic/claude-4.5-sonnet"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Example: anthropic/claude-4.5-sonnet 🔥 (Latest), anthropic/claude-3.5-sonnet
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <p className="text-sm text-blue-800">
+                                        <strong>💡 Tip:</strong> Visit <a href="https://openrouter.ai/docs#models" target="_blank" rel="noopener noreferrer" className="underline font-semibold">OpenRouter Models</a> to see the full list of available models and their identifiers.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* OpenAI API Key Section - Optional */}
+                        <div className="mb-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-2xl font-bold text-gray-900">OpenAI API (Optional)</h2>
                                 <a
                                     href="https://platform.openai.com/api-keys"
                                     target="_blank"
@@ -154,7 +280,7 @@ Be objective and consistent in your evaluation.`;
 
                             <div className="mb-4">
                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                    OpenAI API Key
+                                    OpenAI API Key (Optional - for PDF extraction only)
                                 </label>
                                 <div className="relative">
                                     <input
@@ -162,8 +288,7 @@ Be objective and consistent in your evaluation.`;
                                         value={openaiApiKey}
                                         onChange={(e) => setOpenaiApiKey(e.target.value)}
                                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent pr-24"
-                                        placeholder="sk-..."
-                                        required
+                                        placeholder="sk-... (optional)"
                                     />
                                     <button
                                         type="button"
@@ -174,8 +299,8 @@ Be objective and consistent in your evaluation.`;
                                     </button>
                                 </div>
                                 <p className="text-sm text-gray-500 mt-2">
-                                    Your API key is stored securely and only used for generating rubric suggestions.
-                                    The AI Rubric Helper uses GPT-4o for generating rubric suggestions.
+                                    <strong>Optional:</strong> Only required for PDF exam extraction (uses OpenAI Assistants API which isn't supported by OpenRouter).
+                                    All other features use OpenRouter. You can skip this if you don't need PDF extraction.
                                 </p>
                             </div>
                         </div>

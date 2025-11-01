@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { Settings } from '@/models/Settings';
+import { getOpenRouterClient, getDefaultModel } from '@/lib/openrouter';
 import { Question } from '@/models/Question';
 import { Submission } from '@/models/Submission';
 import { Answer } from '@/models/Answer';
 import { BatchUpload } from '@/models/BatchUpload';
 import OpenAI from 'openai';
 
-// Helper to extract text from image using OpenAI Vision
-async function extractTextFromImage(file: File, openaiApiKey: string): Promise<string> {
+// Helper to extract text from image using OpenRouter Vision
+async function extractTextFromImage(file: File): Promise<string> {
   try {
-    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const { client: openai } = await getOpenRouterClient();
     
     const buffer = await file.arrayBuffer();
     const base64 = Buffer.from(buffer).toString('base64');
     const mimeType = file.type || 'image/png';
     
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: getDefaultModel('vision'),
       messages: [
         {
           role: 'user',
@@ -80,12 +80,12 @@ async function extractTextFromPDF(file: File): Promise<string> {
 }
 
 // Helper to extract student metadata (name and email) from text
-async function extractStudentMetadata(text: string, openaiApiKey: string): Promise<{ name: string; email: string }> {
+async function extractStudentMetadata(text: string): Promise<{ name: string; email: string }> {
   try {
-    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const { client: openai } = await getOpenRouterClient();
     
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: getDefaultModel('extraction'),
       messages: [
         {
           role: 'system',
@@ -129,11 +129,10 @@ If you cannot find the name, use "Unknown Student". If you cannot find an email 
 // Helper to parse submission and map to questions
 async function parseSubmission(
   text: string,
-  questions: any[],
-  openaiApiKey: string
+  questions: any[]
 ): Promise<any[]> {
   try {
-    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const { client: openai } = await getOpenRouterClient();
     
     const questionsContext = questions.map((q) => ({
       questionId: q._id.toString(),
@@ -204,7 +203,7 @@ IMPORTANT:
 - Ensure the JSON is valid and parseable`;
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: getDefaultModel('extraction'),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
@@ -306,7 +305,7 @@ export async function POST(request: NextRequest) {
                  fileName.endsWith('.jpeg') || 
                  fileName.endsWith('.gif') || 
                  fileName.endsWith('.webp')) {
-        extractedText = await extractTextFromImage(file, settings.openaiApiKey);
+        extractedText = await extractTextFromImage(file);
       } else if (fileName.endsWith('.md') || fileName.endsWith('.markdown') || fileType === 'text/markdown') {
         extractedText = await file.text();
       } else if (fileType.startsWith('text/')) {
@@ -326,7 +325,7 @@ export async function POST(request: NextRequest) {
       await batch.save();
       
       // Step 2: Extract student metadata (name and email)
-      const metadata = await extractStudentMetadata(extractedText, settings.openaiApiKey);
+      const metadata = await extractStudentMetadata(extractedText);
       
       batch.files[fileIndex].studentName = metadata.name;
       batch.files[fileIndex].studentEmail = metadata.email;
@@ -363,7 +362,7 @@ export async function POST(request: NextRequest) {
         }];
       } else {
         // Multiple questions: use AI to parse and map answers
-        parsedAnswers = await parseSubmission(extractedText, questions, settings.openaiApiKey);
+        parsedAnswers = await parseSubmission(extractedText, questions);
       }
       
       // Update progress: creating submission

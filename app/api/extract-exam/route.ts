@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { Settings } from '@/models/Settings';
+import { getOpenRouterClient, getDefaultModel } from '@/lib/openrouter';
 import OpenAI from 'openai';
 
 interface ExtractedQuestion {
@@ -21,10 +21,13 @@ interface ExtractedRubric {
 
 // Helper function to extract text from PDF
 async function extractFromPDF(file: File): Promise<string> {
-  // Get settings for OpenAI API key
-  const settings = await Settings.findOne();
-  if (!settings || !settings.openaiApiKey) {
-    throw new Error('OpenAI API key not configured');
+  // Note: PDF extraction uses OpenAI Assistants API which requires direct OpenAI
+  // OpenRouter doesn't support the Assistants API, so we use direct OpenAI here
+  const { settings } = await getOpenRouterClient();
+  
+  // For PDF, we still need direct OpenAI API for Assistants
+  if (!settings.openaiApiKey) {
+    throw new Error('OpenAI API key required for PDF extraction. OpenRouter does not support Assistants API.');
   }
 
   const openai = new OpenAI({
@@ -159,15 +162,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fetch settings to get API key
-    const settings = await Settings.findOne();
-
-    if (!settings || !settings.openaiApiKey) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured. Please add it in Settings.' },
-        { status: 400 }
-      );
-    }
+    // Get OpenRouter client for exam structuring
+    const { client: openai, settings } = await getOpenRouterClient();
 
     if (!extractedText) {
       return NextResponse.json(
@@ -177,11 +173,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('Extracted text:', extractedText.substring(0, 500));
-
-    // Initialize OpenAI client
-    const openai = new OpenAI({
-      apiKey: settings.openaiApiKey,
-    });
 
     // Build dynamic prompt based on options
     let systemPrompt = `You are an expert at analyzing exam documents and extracting structured information.`;
@@ -349,10 +340,10 @@ IMPORTANT:`;
 - Set rubrics to an empty array [] for each question`;
     }
 
-    // Use GPT to structure the questions and rubrics
+    // Use OpenRouter to structure the questions and rubrics
     console.log('Structuring questions and rubrics...');
     const structureCompletion = await openai.chat.completions.create({
-      model: 'gpt-5',
+      model: getDefaultModel('extraction'),
       messages: [
         {
           role: 'system',
@@ -398,10 +389,10 @@ IMPORTANT:`;
     console.error('PDF extraction error:', error);
 
     if (error instanceof Error) {
-      // Handle OpenAI API errors
+      // Handle API errors
       if ('status' in error && (error as any).status === 401) {
         return NextResponse.json(
-          { error: 'Invalid OpenAI API key. Please check your settings.' },
+          { error: 'Invalid API key. Please check your settings.' },
           { status: 401 }
         );
       }

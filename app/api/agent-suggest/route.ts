@@ -1,27 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { Settings } from '@/models/Settings';
-import OpenAI from 'openai';
+import { getOpenRouterClient } from '@/lib/openrouter';
+import { GradingAgent } from '@/models/GradingAgent';
 
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    // Get OpenAI API key from settings
-    const settings = await Settings.findOne();
-    if (!settings || !settings.openaiApiKey) {
+    const body = await request.json();
+    const { agentId, questionText, currentAnswer, allAnswers, rubrics } = body;
+    
+    // Get agent to determine which model to use
+    const agent = await GradingAgent.findById(agentId);
+    if (!agent) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured. Please set it in Settings.' },
-        { status: 400 }
+        { error: 'Agent not found.' },
+        { status: 404 }
       );
     }
 
-    const openai = new OpenAI({
-      apiKey: settings.openaiApiKey,
-    });
-
-    const body = await request.json();
-    const { agentId, questionText, currentAnswer, allAnswers, rubrics } = body;
+    // Get OpenRouter client and settings
+    const { client: openai, settings } = await getOpenRouterClient();
+    
+    const modelToUse = agent.model || 'openai/gpt-4o-mini';
 
     if (!agentId || !questionText || !currentAnswer || !rubrics || !Array.isArray(rubrics)) {
       return NextResponse.json(
@@ -105,7 +106,7 @@ ${currentAnswer.answerText}
 Please evaluate this answer and suggest the appropriate level for each criteria. Return ONLY valid JSON.`;
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: modelToUse,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },

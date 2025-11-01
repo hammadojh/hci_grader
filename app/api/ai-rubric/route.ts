@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { Settings } from '@/models/Settings';
-import OpenAI from 'openai';
+import { getOpenRouterClient, getDefaultModel } from '@/lib/openrouter';
 
 interface RubricLevel {
   name: string;
@@ -26,20 +25,8 @@ export async function POST(request: NextRequest) {
         await connectDB();
         const body: RubricRequest = await request.json();
 
-        // Fetch settings to get API key and system prompt
-        const settings = await Settings.findOne();
-
-        if (!settings || !settings.openaiApiKey) {
-            return NextResponse.json(
-                { error: 'OpenAI API key not configured. Please add it in Settings.' },
-                { status: 400 }
-            );
-        }
-
-        // Initialize OpenAI client
-        const openai = new OpenAI({
-            apiKey: settings.openaiApiKey,
-        });
+        // Get OpenRouter client and settings
+        const { client: openai, settings } = await getOpenRouterClient();
 
         // Build conversation messages
         const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
@@ -97,9 +84,9 @@ Important: The percentage values should be from 0-100 representing the percentag
             content: userMessage,
         });
 
-        // Call OpenAI API
+        // Call OpenRouter API
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o',  // Using gpt-4o as gpt-5 is not yet available
+            model: getDefaultModel('rubric'),
             messages: messages,
             temperature: 0.7,
             response_format: { type: 'json_object' },
@@ -133,10 +120,10 @@ Important: The percentage values should be from 0-100 representing the percentag
         console.error('AI Rubric generation error:', error);
 
         if (error instanceof Error) {
-            // Handle OpenAI API errors
+            // Handle OpenRouter API errors
             if ('status' in error && error.status === 401) {
                 return NextResponse.json(
-                    { error: 'Invalid OpenAI API key. Please check your settings.' },
+                    { error: 'Invalid OpenRouter API key. Please check your settings.' },
                     { status: 401 }
                 );
             }

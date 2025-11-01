@@ -60,6 +60,13 @@ interface GradingAgent {
   questionId: string;
   name: string;
   color: string;
+  model?: string;
+}
+
+interface Settings {
+  defaultModel1?: string;
+  defaultModel2?: string;
+  defaultModel3?: string;
 }
 
 interface AgentSuggestion {
@@ -93,11 +100,16 @@ export default function GradeByQuestionPage() {
   const [openAgentMenuId, setOpenAgentMenuId] = useState<string | null>(null);
   const [generatingAllAgents, setGeneratingAllAgents] = useState(false);
   const [creatingAgents, setCreatingAgents] = useState(false);
+  const [settings, setSettings] = useState<Settings | null>(null);
 
   // Local state for editing
   const [localAnswers, setLocalAnswers] = useState<{ [answerId: string]: Answer }>({});
   const [editingAnswerId, setEditingAnswerId] = useState<string | null>(null);
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null);
+  
+  // Ref for agent menu to detect clicks outside
+  const agentMenuRef = useState<HTMLDivElement | null>(null)[0];
+  const setAgentMenuRef = useState<HTMLDivElement | null>(null)[1];
   
   // Debounce timer for auto-save
   const feedbackDebounceTimerRef = useState<{ [key: string]: NodeJS.Timeout }>({})[0];
@@ -108,18 +120,24 @@ export default function GradeByQuestionPage() {
 
   // Close agent menu when clicking outside
   useEffect(() => {
-    const handleClickOutside = () => {
-      setOpenAgentMenuId(null);
+    const handleClickOutside = (event: MouseEvent) => {
+      // Check if click is outside the agent menu
+      if (agentMenuRef && !agentMenuRef.contains(event.target as Node)) {
+        setOpenAgentMenuId(null);
+      }
     };
 
     if (openAgentMenuId) {
-      document.addEventListener('click', handleClickOutside);
+      // Add a small delay to prevent immediate closing when opening
+      setTimeout(() => {
+        document.addEventListener('click', handleClickOutside);
+      }, 0);
     }
 
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
-  }, [openAgentMenuId]);
+  }, [openAgentMenuId, agentMenuRef]);
 
   useEffect(() => {
     // Initialize local answers state ONLY when answers array actually changes
@@ -155,6 +173,11 @@ export default function GradeByQuestionPage() {
 
   const fetchData = async () => {
     try {
+      // Fetch settings first
+      const settingsRes = await fetch('/api/settings');
+      const settingsData = await settingsRes.json();
+      setSettings(settingsData);
+      
       // Fetch assignment
       const assignmentRes = await fetch(`/api/assignments/${assignmentId}`);
       const assignmentData = await assignmentRes.json();
@@ -201,9 +224,16 @@ export default function GradeByQuestionPage() {
       if (agentsData.length === 0 && !creatingAgents) {
         setCreatingAgents(true); // Prevent concurrent creation
         const defaultAgents = [];
+                const defaultModels = [
+                  settingsData.defaultModel1 || 'openai/gpt-5',
+                  settingsData.defaultModel2 || 'google/gemini-2.5-pro',
+                  settingsData.defaultModel3 || 'anthropic/claude-4.5-sonnet',
+                ];
+        
         for (let i = 1; i <= 3; i++) {
           const agentName = `g${i}`;
           const agentColor = AGENT_COLORS[i - 1];
+          const agentModel = defaultModels[i - 1];
           
           try {
             const createRes = await fetch('/api/grading-agents', {
@@ -213,6 +243,7 @@ export default function GradeByQuestionPage() {
                 questionId: questionId,
                 name: agentName,
                 color: agentColor,
+                model: agentModel,
               }),
             });
             
@@ -433,12 +464,48 @@ export default function GradeByQuestionPage() {
     '#F97316', // orange
   ];
 
+  // Available models for dropdown - Latest and best models from each provider
+  const AVAILABLE_MODELS = [
+    // OpenAI - Latest models (GPT-5 released Aug 2025)
+    { value: 'openai/gpt-5', label: 'GPT-5 (OpenAI) 🔥 Latest & Most Advanced' },
+    { value: 'openai/gpt-4o', label: 'GPT-4o (OpenAI)' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (OpenAI) - Fast' },
+    { value: 'openai/o1-preview', label: 'o1 Preview (OpenAI) - Reasoning' },
+    { value: 'openai/o1-mini', label: 'o1 Mini (OpenAI) - Fast Reasoning' },
+    
+    // Google - Latest Gemini models
+    { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (Google) 🔥 Latest & Most Advanced' },
+    { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 Flash (Google) - Free' },
+    { value: 'google/gemini-pro-1.5', label: 'Gemini 1.5 Pro (Google)' },
+    { value: 'google/gemini-flash-1.5', label: 'Gemini 1.5 Flash (Google) - Fast' },
+    
+    // Anthropic - Latest Claude models (4.5 Sonnet released Sep 2025)
+    { value: 'anthropic/claude-4.5-sonnet', label: 'Claude 4.5 Sonnet (Anthropic) 🔥 Latest & Best' },
+    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Anthropic)' },
+    { value: 'anthropic/claude-3-opus', label: 'Claude 3 Opus (Anthropic)' },
+    { value: 'anthropic/claude-3-haiku', label: 'Claude 3 Haiku (Anthropic) - Fast' },
+    
+    // Other providers
+    { value: 'meta-llama/llama-3.1-405b-instruct', label: 'Llama 3.1 405B (Meta) - Largest' },
+    { value: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B (Meta)' },
+    { value: 'mistralai/mistral-large', label: 'Mistral Large (Mistral)' },
+    { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat - Strong Reasoning' },
+  ];
+
   const addGradingAgent = async () => {
     if (!question) return;
     
     const nextAgentNumber = gradingAgents.length + 1;
     const agentName = `g${nextAgentNumber}`;
     const agentColor = AGENT_COLORS[(nextAgentNumber - 1) % AGENT_COLORS.length];
+    
+    // Cycle through default models from settings (1 → model1, 2 → model2, 3 → model3, 4 → model1, etc.)
+    const defaultModels = [
+      settings?.defaultModel1 || 'openai/gpt-5',
+      settings?.defaultModel2 || 'google/gemini-2.5-pro',
+      settings?.defaultModel3 || 'anthropic/claude-4.5-sonnet',
+    ];
+    const defaultModel = defaultModels[(nextAgentNumber - 1) % defaultModels.length];
 
     try {
       const response = await fetch('/api/grading-agents', {
@@ -448,15 +515,39 @@ export default function GradeByQuestionPage() {
           questionId: question._id,
           name: agentName,
           color: agentColor,
+          model: defaultModel,
         }),
       });
 
       if (response.ok) {
         const newAgent = await response.json();
-        setGradingAgents([...gradingAgents, newAgent]);
+        setGradingAgents(prevAgents => [...prevAgents, newAgent]);
       }
     } catch (error) {
       console.error('Error adding agent:', error);
+    }
+  };
+  
+  const updateAgentModel = async (agentId: string, newModel: string) => {
+    try {
+      const response = await fetch('/api/grading-agents', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId,
+          model: newModel,
+        }),
+      });
+
+      if (response.ok) {
+        const updatedAgent = await response.json();
+        // Use functional update to avoid stale closure
+        setGradingAgents(prevAgents => 
+          prevAgents.map(a => a._id === agentId ? updatedAgent : a)
+        );
+      }
+    } catch (error) {
+      console.error('Error updating agent model:', error);
     }
   };
 
@@ -467,7 +558,7 @@ export default function GradeByQuestionPage() {
       });
 
       if (response.ok) {
-        setGradingAgents(gradingAgents.filter(a => a._id !== agentId));
+        setGradingAgents(prevAgents => prevAgents.filter(a => a._id !== agentId));
         // Remove agent suggestions from all answers
         const updatedLocalAnswers = { ...localAnswers };
         Object.keys(updatedLocalAnswers).forEach(answerId => {
@@ -488,30 +579,36 @@ export default function GradeByQuestionPage() {
     if (!question) return;
     
     setGeneratingAgent(agentId);
+    console.log(`🚀 Starting agent ${agentId}, processing ${answers.length} answers`);
 
     try {
       // Generate suggestions for all answers
-      for (const answerWithSubmission of answers) {
-        const response = await fetch('/api/agent-suggest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId,
-            questionText: question.questionText,
-            currentAnswer: answerWithSubmission,
-            allAnswers: answers.map(a => ({ answerText: a.answerText })),
-            rubrics: rubrics,
-          }),
-        });
+      for (let i = 0; i < answers.length; i++) {
+        const answerWithSubmission = answers[i];
+        console.log(`  Processing answer ${i + 1}/${answers.length} (ID: ${answerWithSubmission._id})`);
+        
+        try {
+          const response = await fetch('/api/agent-suggest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              agentId,
+              questionText: question.questionText,
+              currentAnswer: answerWithSubmission,
+              allAnswers: answers.map(a => ({ answerText: a.answerText })),
+              rubrics: rubrics,
+            }),
+          });
 
         if (response.ok) {
           const result = await response.json();
           console.log('Agent API Response:', result);
           
-          // Find the agent name for feedback formatting
+          // Find the agent name and model for feedback formatting
           const agent = gradingAgents.find(a => a._id === agentId);
           const agentName = agent ? agent.name : 'unknown';
-          console.log('Agent name:', agentName);
+          const modelName = agent ? getModelDisplayName(agent.model) : 'Unknown Model';
+          console.log('Agent name:', agentName, 'Model:', modelName);
           
           // Update state for this specific answer using functional form to get latest state
           setLocalAnswers(prevAnswers => {
@@ -539,8 +636,8 @@ export default function GradeByQuestionPage() {
                     updatedFeedback += '\n\n----\n\n';
                   }
                   
-                  // Format: grader X feedback: ...
-                  updatedFeedback += `${agentName} feedback:\n`;
+                  // Format: grader X (Model Name) feedback: ...
+                  updatedFeedback += `${agentName} (${modelName}) feedback:\n`;
                   if (suggestion.justification) {
                     updatedFeedback += `${suggestion.justification} `;
                   }
@@ -578,7 +675,7 @@ export default function GradeByQuestionPage() {
                 let feedbackText = '';
                 console.log('New evaluation suggestion:', s);
                 if (s.justification || s.improvementSuggestion) {
-                  feedbackText = `${agentName} feedback:\n`;
+                  feedbackText = `${agentName} (${modelName}) feedback:\n`;
                   if (s.justification) {
                     feedbackText += `${s.justification} `;
                   }
@@ -637,12 +734,24 @@ export default function GradeByQuestionPage() {
           setTimeout(() => {
             console.log('State after update - localAnswers:', localAnswers[answerWithSubmission._id]);
           }, 100);
+          
+          console.log(`  ✓ Answer ${i + 1}/${answers.length} completed`);
+        } else {
+          console.error(`  ✗ Answer ${i + 1}/${answers.length} failed: ${response.status}`);
+          const errorData = await response.json();
+          console.error('Error details:', errorData);
+        }
+        } catch (answerError) {
+          console.error(`  ✗ Error processing answer ${i + 1}/${answers.length}:`, answerError);
+          // Continue to next answer even if this one fails
         }
       }
+      console.log(`✅ Agent ${agentId} completed all ${answers.length} answers`);
     } catch (error) {
-      console.error('Error generating agent suggestions:', error);
+      console.error('❌ Error generating agent suggestions:', error);
     } finally {
       setGeneratingAgent(null);
+      console.log(`🏁 Agent ${agentId} finished, cleared generatingAgent state`);
     }
   };
 
@@ -650,16 +759,22 @@ export default function GradeByQuestionPage() {
     if (gradingAgents.length === 0) return;
     
     setGeneratingAllAgents(true);
+    console.log(`🎯 Starting Run All: ${gradingAgents.length} agents`);
 
     try {
       // Run all agents sequentially so they don't overwrite each other
-      for (const agent of gradingAgents) {
+      for (let i = 0; i < gradingAgents.length; i++) {
+        const agent = gradingAgents[i];
+        console.log(`\n📍 Running agent ${i + 1}/${gradingAgents.length}: ${agent.name} (${agent._id})`);
         await generateAgentSuggestions(agent._id);
+        console.log(`✓ Agent ${i + 1}/${gradingAgents.length} completed\n`);
       }
+      console.log(`🎉 Run All completed successfully!`);
     } catch (error) {
-      console.error('Error generating all agent suggestions:', error);
+      console.error('❌ Error generating all agent suggestions:', error);
     } finally {
       setGeneratingAllAgents(false);
+      console.log(`🏁 Run All finished`);
     }
   };
 
@@ -673,6 +788,26 @@ export default function GradeByQuestionPage() {
       const answer = localAnswers[a._id];
       return answer && answer.criteriaEvaluations.length === rubrics.length && rubrics.length > 0;
     }).length;
+  };
+  
+  // Helper function to get the first letter of model provider
+  const getModelProviderLetter = (model?: string) => {
+    if (!model) return 'g';
+    const provider = model.split('/')[0].toLowerCase();
+    if (provider === 'openai') return 'O';
+    if (provider === 'google') return 'G';
+    if (provider === 'anthropic') return 'A';
+    if (provider === 'meta-llama' || provider === 'meta') return 'M';
+    if (provider === 'mistralai' || provider === 'mistral') return 'M';
+    // Default to first letter of provider
+    return provider.charAt(0).toUpperCase();
+  };
+
+  // Helper function to get model display name
+  const getModelDisplayName = (model?: string) => {
+    if (!model) return 'No model set';
+    const found = AVAILABLE_MODELS.find(m => m.value === model);
+    return found ? found.label : model;
   };
 
   if (loading) {
@@ -751,27 +886,52 @@ export default function GradeByQuestionPage() {
                         generatingAgent === agent._id ? 'animate-pulse' : 'hover:scale-110'
                       }`}
                       style={{ backgroundColor: agent.color }}
-                      title={`Agent ${agent.name}`}
+                      title={`Agent ${agent.name} - ${getModelDisplayName(agent.model)}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         setOpenAgentMenuId(openAgentMenuId === agent._id ? null : agent._id);
                       }}
                     >
-                      {agent.name}
+                      {getModelProviderLetter(agent.model)}
                     </div>
 
                     {/* Click Popup Menu */}
                     {openAgentMenuId === agent._id && generatingAgent === null && !generatingAllAgents && (
                       <div 
-                        className="absolute top-12 left-1/2 transform -translate-x-1/2 bg-white border-2 border-gray-300 rounded-lg shadow-xl z-50 min-w-[120px]"
+                        ref={setAgentMenuRef}
+                        className="absolute top-12 left-1/2 transform -translate-x-1/2 bg-white border-2 border-gray-300 rounded-lg shadow-xl z-50 min-w-[280px]"
                         onClick={(e) => e.stopPropagation()}
                       >
+                        {/* Model Selector Dropdown */}
+                        <div className="px-4 py-3 border-b border-gray-200">
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">
+                            Model: <span className="text-indigo-600">{getModelProviderLetter(agent.model)}</span>
+                          </label>
+                          <select
+                            value={agent.model || 'openai/gpt-5'}
+                            onChange={(e) => {
+                              updateAgentModel(agent._id, e.target.value);
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {AVAILABLE_MODELS.map((model) => (
+                              <option key={model.value} value={model.value}>
+                                {model.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-2">
+                            Current: {getModelDisplayName(agent.model)}
+                          </p>
+                        </div>
+                        
                         <button
                           onClick={() => {
                             setOpenAgentMenuId(null);
                             generateAgentSuggestions(agent._id);
                           }}
-                          className="w-full px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 rounded-t-lg transition-colors"
+                          className="w-full px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 transition-colors"
                         >
                           ▶️ Run
                         </button>
@@ -1052,9 +1212,9 @@ export default function GradeByQuestionPage() {
                                                           key={agent._id}
                                                           className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold"
                                                           style={{ backgroundColor: agent.color }}
-                                                          title={`Agent ${agent.name} suggests this level`}
+                                                          title={`Agent ${agent.name} (${agent.model || 'No model'}) suggests this level`}
                                                         >
-                                                          {agent.name}
+                                                          {getModelProviderLetter(agent.model)}
                                                         </div>
                                                       );
                                                     })}

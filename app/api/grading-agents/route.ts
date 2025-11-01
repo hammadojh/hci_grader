@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
     const body = await request.json();
-    const { questionId, name, color } = body;
+    const { questionId, name, color, model } = body;
 
     if (!questionId || !name || !color) {
       return NextResponse.json(
@@ -35,10 +35,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const agent = await GradingAgent.create({ questionId, name, color });
+    const agent = await GradingAgent.create({ 
+      questionId, 
+      name, 
+      color,
+      model: model || 'openai/gpt-4o-mini'
+    });
     return NextResponse.json(agent, { status: 201 });
   } catch (error: any) {
     console.error('POST /api/grading-agents error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// PUT update a grading agent (for model switching)
+export async function PUT(request: NextRequest) {
+  try {
+    await connectDB();
+    const body = await request.json();
+    const { agentId, model } = body;
+
+    if (!agentId) {
+      return NextResponse.json({ error: 'agentId is required' }, { status: 400 });
+    }
+
+    const agent = await GradingAgent.findById(agentId);
+    if (!agent) {
+      return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
+    }
+
+    if (model !== undefined) {
+      agent.model = model;
+    }
+
+    await agent.save();
+    return NextResponse.json(agent);
+  } catch (error: any) {
+    console.error('PUT /api/grading-agents error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

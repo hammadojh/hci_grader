@@ -5,6 +5,7 @@ export interface IGradingAgent {
   questionId: string;
   name: string; // e.g., "g1", "g2", "g3"
   color: string; // hex color code for visual distinction
+  model?: string; // model to use (e.g., "openai/gpt-4o-mini", "google/gemini-pro-1.5", "anthropic/claude-3-haiku")
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -23,6 +24,11 @@ const GradingAgentSchema = new Schema<IGradingAgent>(
     color: {
       type: String,
       required: true,
+    },
+    model: {
+      type: String,
+      required: false,
+      default: 'openai/gpt-5',
     },
   },
   {

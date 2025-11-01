@@ -9,30 +9,46 @@ export async function GET() {
 
         const defaultGradingAgentPrompt = `You are an expert grading assistant. Your task is to evaluate a student's answer based on the provided rubrics.
 
-For each criteria in the rubric, you must select the most appropriate level based on the student's answer quality.
+CRITICAL: For each rubric criteria, you MUST provide three things:
+1. suggestedLevelIndex - the level number (0, 1, 2, etc.)
+2. justification - a 1-2 sentence explanation of WHY you chose this level (written in SECOND PERSON, speaking directly to the student)
+3. improvementSuggestion - a 1 sentence suggestion on how the student can improve (written in SECOND PERSON, speaking directly to the student)
 
-You should:
-1. Carefully read the question and the student's answer
-2. Compare the answer against each rubric criteria
-3. Select the level that best matches the answer's quality for each criteria
-4. Consider all answers from other students for context (to calibrate your grading)
+IMPORTANT: 
+- The justification and improvementSuggestion fields are REQUIRED and must not be empty.
+- Write ALL feedback in SECOND PERSON (use "you", "your") as if speaking directly to the student.
+- DO NOT use third person ("the student", "they", "their").
 
-Return your evaluation as a JSON object with the following structure:
+Example of correct output:
 {
   "suggestions": [
     {
-      "rubricId": "rubric_id_here",
-      "suggestedLevelIndex": 0
+      "rubricId": "abc123",
+      "suggestedLevelIndex": 1,
+      "justification": "You demonstrate basic understanding of the concept but your analysis lacks depth.",
+      "improvementSuggestion": "Consider providing specific examples to strengthen your argument."
     }
   ]
 }
 
-Be objective and consistent in your evaluation.`;
+Steps:
+1. Read the question and student's answer carefully
+2. For each rubric criteria, evaluate the answer against each level
+3. Select the most appropriate level
+4. Write a clear justification in SECOND PERSON explaining your choice (e.g., "You showed...", "Your answer...")
+5. Write a helpful suggestion for improvement in SECOND PERSON (e.g., "Try to...", "You could...")
+6. Consider all student answers for calibration
+
+Return ONLY valid JSON with the exact structure shown above. All fields are required.`;
 
         // If no settings exist, create default settings
         if (!settings) {
-            settings = await Settings.create({
-                openaiApiKey: '',
+      settings = await Settings.create({
+        openaiApiKey: '', // Optional
+        openRouterApiKey: '', // Will need to be configured by user
+        defaultModel1: 'openai/gpt-5',
+        defaultModel2: 'google/gemini-2.5-pro',
+        defaultModel3: 'anthropic/claude-4.5-sonnet',
                 aiSystemPrompt: `You are an expert educational assessment designer. Your role is to help instructors create comprehensive, fair, and well-structured rubrics for grading assignments.
 
 When creating rubrics:
@@ -59,8 +75,17 @@ Always aim for rubrics that are practical, fair, and promote learning.`,
             // Ensure gradingAgentPrompt exists (for existing settings documents)
             if (!settings.gradingAgentPrompt) {
                 settings.gradingAgentPrompt = defaultGradingAgentPrompt;
-                await settings.save();
             }
+            // Ensure default models exist
+      if (!settings.defaultModel1) {
+        settings.defaultModel1 = 'openai/gpt-5';
+      }
+      if (!settings.defaultModel2) {
+        settings.defaultModel2 = 'google/gemini-2.5-pro';
+      }
+      if (!settings.defaultModel3) {
+        settings.defaultModel3 = 'anthropic/claude-4.5-sonnet';
+      }
             // Ensure extraction settings exist with defaults
             if (settings.extractRubrics === undefined) {
                 settings.extractRubrics = true;
@@ -91,7 +116,21 @@ export async function POST(request: NextRequest) {
 
         if (existingSettings) {
             // Update existing settings
-            existingSettings.openaiApiKey = body.openaiApiKey;
+            if (body.openaiApiKey !== undefined) {
+                existingSettings.openaiApiKey = body.openaiApiKey;
+            }
+            if (body.openRouterApiKey !== undefined) {
+                existingSettings.openRouterApiKey = body.openRouterApiKey;
+            }
+            if (body.defaultModel1 !== undefined) {
+                existingSettings.defaultModel1 = body.defaultModel1;
+            }
+            if (body.defaultModel2 !== undefined) {
+                existingSettings.defaultModel2 = body.defaultModel2;
+            }
+            if (body.defaultModel3 !== undefined) {
+                existingSettings.defaultModel3 = body.defaultModel3;
+            }
             existingSettings.aiSystemPrompt = body.aiSystemPrompt;
             if (body.gradingAgentPrompt) {
                 existingSettings.gradingAgentPrompt = body.gradingAgentPrompt;
@@ -128,7 +167,21 @@ export async function PUT(request: NextRequest) {
             return NextResponse.json({ error: 'Settings not found' }, { status: 404 });
         }
 
-        settings.openaiApiKey = body.openaiApiKey;
+        if (body.openaiApiKey !== undefined) {
+            settings.openaiApiKey = body.openaiApiKey;
+        }
+        if (body.openRouterApiKey !== undefined) {
+            settings.openRouterApiKey = body.openRouterApiKey;
+        }
+        if (body.defaultModel1 !== undefined) {
+            settings.defaultModel1 = body.defaultModel1;
+        }
+        if (body.defaultModel2 !== undefined) {
+            settings.defaultModel2 = body.defaultModel2;
+        }
+        if (body.defaultModel3 !== undefined) {
+            settings.defaultModel3 = body.defaultModel3;
+        }
         settings.aiSystemPrompt = body.aiSystemPrompt;
         if (body.gradingAgentPrompt) {
             settings.gradingAgentPrompt = body.gradingAgentPrompt;

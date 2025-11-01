@@ -17,6 +17,10 @@ export default function Home() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [totalPoints, setTotalPoints] = useState(100);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editTotalPoints, setEditTotalPoints] = useState(100);
 
   const fetchAssignments = async () => {
     const res = await fetch('/api/assignments');
@@ -49,6 +53,35 @@ export default function Home() {
       await fetch(`/api/assignments/${id}`, { method: 'DELETE' });
       fetchAssignments();
     }
+  };
+
+  const startEditing = (assignment: Assignment) => {
+    setEditingId(assignment._id);
+    setEditTitle(assignment.title);
+    setEditDescription(assignment.description);
+    setEditTotalPoints(assignment.totalPoints);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditTitle('');
+    setEditDescription('');
+    setEditTotalPoints(100);
+  };
+
+  const updateAssignment = async (e: React.FormEvent, id: string) => {
+    e.preventDefault();
+    await fetch(`/api/assignments/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        title: editTitle, 
+        description: editDescription, 
+        totalPoints: editTotalPoints 
+      }),
+    });
+    setEditingId(null);
+    fetchAssignments();
   };
 
   return (
@@ -139,34 +172,97 @@ export default function Home() {
                   key={assignment._id}
                   className="border border-gray-200 rounded-lg p-6 hover:shadow-md hover:border-indigo-300 transition-all"
                 >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold text-gray-900 mb-2">
-                        {assignment.title}
-                      </h3>
-                      <p className="text-gray-600 mb-2">{assignment.description}</p>
-                      <p className="text-sm text-indigo-600 font-semibold mb-2">
-                        Total Points: {assignment.totalPoints}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Created: {new Date(assignment.createdAt).toLocaleDateString()}
-                      </p>
+                  {editingId === assignment._id ? (
+                    <form onSubmit={(e) => updateAssignment(e, assignment._id)} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Title
+                        </label>
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Description
+                        </label>
+                        <textarea
+                          value={editDescription}
+                          onChange={(e) => setEditDescription(e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          rows={3}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Total Points
+                        </label>
+                        <input
+                          type="number"
+                          value={editTotalPoints}
+                          onChange={(e) => setEditTotalPoints(Number(e.target.value))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          min={1}
+                          required
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="submit"
+                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditing}
+                          className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="text-xl font-bold text-gray-900 mb-2">
+                          {assignment.title}
+                        </h3>
+                        <p className="text-gray-600 mb-2">{assignment.description}</p>
+                        <p className="text-sm text-indigo-600 font-semibold mb-2">
+                          Total Points: {assignment.totalPoints}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Created: {new Date(assignment.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          onClick={() => startEditing(assignment)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <Link
+                          href={`/assignment/${assignment._id}`}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          Manage
+                        </Link>
+                        <button
+                          onClick={() => deleteAssignment(assignment._id)}
+                          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-2 ml-4">
-                      <Link
-                        href={`/assignment/${assignment._id}`}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
-                      >
-                        Manage
-                      </Link>
-                      <button
-                        onClick={() => deleteAssignment(assignment._id)}
-                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
               ))
             )}

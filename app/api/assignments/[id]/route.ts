@@ -19,6 +19,28 @@ export async function GET(
   }
 }
 
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+    await connectDB();
+    const assignment = await Assignment.findByIdAndUpdate(
+      id,
+      { $set: body },
+      { new: true, runValidators: true }
+    );
+    if (!assignment) {
+      return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
+    }
+    return NextResponse.json(assignment);
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to update assignment' }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

@@ -195,7 +195,11 @@ export async function POST(request: NextRequest) {
     if (splitIntoQuestions) {
       systemPrompt += `\n1. All questions with their text and point values (split into separate questions)`;
     } else {
-      systemPrompt += `\n1. The exam content as a single question (do not split into multiple questions)`;
+      systemPrompt += `\n1. The actual assignment/question that students need to answer (as a single question)
+   - ONLY extract the core question or assignment prompt that students are expected to respond to
+   - EXCLUDE all instructions, submission guidelines, grading criteria, rubrics, course policies, or administrative content
+   - Focus on identifying what the student is being asked to do or answer
+   - The extracted question should be clear and self-contained`;
     }
     
     if (extractRubrics) {
@@ -212,8 +216,11 @@ export async function POST(request: NextRequest) {
 - Ensure all percentages in questions sum to 100%`;
     } else {
       systemPrompt += `
-- Keep all content as a single question
-- Set pointsPercentage to 100 for the single question`;
+- Identify and extract ONLY the core assignment question or prompt
+- Ignore administrative sections like: submission instructions, formatting requirements, late policies, grading rubrics listed separately, course information
+- The extracted question should be what students need to answer/complete
+- Set pointsPercentage to 100 for the single question
+- Be concise but include all essential information for understanding what is being asked`;
     }
     
     if (extractRubrics) {
@@ -278,7 +285,7 @@ export async function POST(request: NextRequest) {
       userPrompt += `
   "questions": [
     {
-      "questionText": "The full exam content",
+      "questionText": "The extracted core assignment question or prompt that students need to answer (excluding all instructions, guidelines, and administrative content)",
       "questionNumber": 1,
       "pointsPercentage": 100.0,`;
       

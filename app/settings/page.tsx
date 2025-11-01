@@ -261,7 +261,7 @@ Be objective and consistent in your evaluation.`;
                                     <div className="ml-3">
                                         <span className="text-sm font-semibold text-gray-700">Split into separate questions by default</span>
                                         <p className="text-xs text-gray-500 mt-1">
-                                            When enabled, AI will try to identify and split exam content into individual questions. When disabled, content will be kept as a single question.
+                                            When enabled, AI will identify and split exam content into individual questions. When disabled, AI will extract only the core assignment question, excluding instructions and guidelines.
                                         </p>
                                     </div>
                                 </label>

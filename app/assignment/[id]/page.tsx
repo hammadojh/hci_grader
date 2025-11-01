@@ -108,6 +108,9 @@ export default function AssignmentDetail() {
   const [extractRubrics, setExtractRubrics] = useState(true);
   const [splitIntoQuestions, setSplitIntoQuestions] = useState(true);
   const [customContext, setCustomContext] = useState('');
+  
+  // Question text expansion state
+  const [expandedQuestions, setExpandedQuestions] = useState<{ [key: number]: boolean }>({});
 
   // Submission form state
   const [showSubmissionForm, setShowSubmissionForm] = useState(false);
@@ -136,6 +139,9 @@ export default function AssignmentDetail() {
 
   // Track which questions have rubrics expanded
   const [expandedRubrics, setExpandedRubrics] = useState<{ [questionId: string]: boolean }>({});
+  
+  // Track which questions have text expanded (for main display)
+  const [expandedQuestionTexts, setExpandedQuestionTexts] = useState<{ [questionId: string]: boolean }>({});
 
   // Batch upload state
   const [showBatchUpload, setShowBatchUpload] = useState(false);
@@ -949,6 +955,7 @@ export default function AssignmentDetail() {
     setExtractedQuestions([]);
     setExtractionSummary('');
     setExtractionError('');
+    setExpandedQuestions({});
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1015,12 +1022,38 @@ export default function AssignmentDetail() {
 
       setExtractedQuestions(data.questions || []);
       setExtractionSummary(data.summary || 'Exam extracted successfully');
+      // Reset expanded state when new questions are extracted
+      setExpandedQuestions({});
     } catch (error) {
       console.error('Extraction error:', error);
       setExtractionError('Failed to extract exam data. Please try again.');
     } finally {
       setIsExtracting(false);
     }
+  };
+
+  const getFirstThreeLines = (text: string): string => {
+    const lines = text.split('\n');
+    return lines.slice(0, 3).join('\n');
+  };
+
+  const hasMoreThanThreeLines = (text: string): boolean => {
+    const lines = text.split('\n');
+    return lines.length > 3;
+  };
+
+  const toggleQuestionExpansion = (index: number) => {
+    setExpandedQuestions(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
+
+  const toggleQuestionTextExpansion = (questionId: string) => {
+    setExpandedQuestionTexts(prev => ({
+      ...prev,
+      [questionId]: !prev[questionId]
+    }));
   };
 
   const editExtractedQuestion = (index: number, field: string, value: string | number) => {
@@ -1062,6 +1095,20 @@ export default function AssignmentDetail() {
 
   const removeExtractedQuestion = (index: number) => {
     setExtractedQuestions(extractedQuestions.filter((_, i) => i !== index));
+    // Clean up expanded state for removed question
+    const newExpanded = { ...expandedQuestions };
+    delete newExpanded[index];
+    // Re-index remaining expanded states
+    const reindexed: { [key: number]: boolean } = {};
+    Object.keys(newExpanded).forEach((key) => {
+      const numKey = parseInt(key);
+      if (numKey > index) {
+        reindexed[numKey - 1] = newExpanded[numKey];
+      } else {
+        reindexed[numKey] = newExpanded[numKey];
+      }
+    });
+    setExpandedQuestions(reindexed);
   };
 
   const removeExtractedRubric = (questionIndex: number, rubricIndex: number) => {
@@ -1282,7 +1329,25 @@ export default function AssignmentDetail() {
                           </button>
                         </div>
                       </div>
-                      <p className="text-gray-700 mb-2">{question.questionText}</p>
+                      
+                      {/* Question Text with Expand/Collapse */}
+                      <div className="mb-2">
+                        <pre className="whitespace-pre-wrap font-sans text-gray-700">
+                          {expandedQuestionTexts[question._id] 
+                            ? question.questionText 
+                            : getFirstThreeLines(question.questionText)}
+                        </pre>
+                        
+                        {hasMoreThanThreeLines(question.questionText) && (
+                          <button
+                            onClick={() => toggleQuestionTextExpansion(question._id)}
+                            className="mt-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+                          >
+                            {expandedQuestionTexts[question._id] ? '▲ Show less' : '▼ Show more'}
+                          </button>
+                        )}
+                      </div>
+                      
                       <p className="text-sm text-indigo-600 font-semibold">
                         {question.pointsPercentage}% ({((question.pointsPercentage / 100) * assignment.totalPoints).toFixed(2)} points)
                       </p>
@@ -2031,7 +2096,7 @@ Answer here..."
                           <div className="ml-3">
                             <span className="text-sm font-medium text-gray-700">Split into separate questions</span>
                             <p className="text-xs text-gray-500">
-                              If unchecked, AI will keep all content as a single question
+                              If unchecked, AI will extract only the core assignment question, excluding instructions and guidelines
                             </p>
                           </div>
                         </label>
@@ -2208,12 +2273,36 @@ Include all stages and explain each one.
                             <label className="block text-sm font-semibold text-gray-700 mb-2">
                               Question Text
                             </label>
+                            
+                            {/* Display-only view with expand/collapse */}
+                            <div className="mb-2 p-3 bg-white border border-gray-300 rounded-lg">
+                              <pre className="whitespace-pre-wrap font-sans text-sm text-gray-800">
+                                {expandedQuestions[qIndex] 
+                                  ? question.questionText 
+                                  : getFirstThreeLines(question.questionText)}
+                              </pre>
+                              
+                              {hasMoreThanThreeLines(question.questionText) && (
+                                <button
+                                  onClick={() => toggleQuestionExpansion(qIndex)}
+                                  className="mt-2 text-xs text-purple-600 hover:text-purple-800 font-semibold"
+                                >
+                                  {expandedQuestions[qIndex] ? '▲ Show less' : '▼ Show more'}
+                                </button>
+                              )}
+                            </div>
+                            
+                            {/* Editable textarea */}
                             <textarea
                               value={question.questionText}
                               onChange={(e) => editExtractedQuestion(qIndex, 'questionText', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                              rows={3}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                              rows={5}
+                              placeholder="Edit question text here..."
                             />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Edit the question text in the box above if needed
+                            </p>
                           </div>
 
                           {/* Points Percentage */}

@@ -12,6 +12,7 @@ export interface ICriteriaEvaluation {
   selectedLevelIndex: number;
   feedback: string;
   agentSuggestions?: IAgentSuggestion[];
+  confirmedByUser?: boolean;
 }
 
 export interface IAnswer {
@@ -62,6 +63,10 @@ const CriteriaEvaluationSchema = new Schema<ICriteriaEvaluation>({
   agentSuggestions: {
     type: [AgentSuggestionSchema],
     default: [],
+  },
+  confirmedByUser: {
+    type: Boolean,
+    default: false,
   },
 }, { _id: false });
 

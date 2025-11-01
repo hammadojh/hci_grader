@@ -29,6 +29,7 @@ interface CriteriaEvaluation {
   rubricId: string;
   selectedLevelIndex: number;
   feedback: string;
+  confirmedByUser?: boolean;
 }
 
 interface Answer {
@@ -72,6 +73,7 @@ export default function GradingPage() {
   const [editingSubmission, setEditingSubmission] = useState(false);
   const [editedSubmission, setEditedSubmission] = useState<Submission | null>(null);
   const [editingAnswerId, setEditingAnswerId] = useState<string | null>(null);
+  const [confirmedSelections, setConfirmedSelections] = useState<{ [key: string]: boolean }>({});
   
   // Debounce timer for auto-save
   const feedbackDebounceTimerRef = useState<{ [key: string]: NodeJS.Timeout }>({})[0];
@@ -142,6 +144,10 @@ export default function GradingPage() {
     const answer = localAnswers[answerId];
     const level = rubric.levels[levelIndex];
 
+    // Mark this selection as confirmed by the user
+    const confirmKey = `${answerId}-${rubric._id}`;
+    setConfirmedSelections(prev => ({ ...prev, [confirmKey]: true }));
+
     // Find or create evaluation for this criteria
     const existingEvalIndex = answer.criteriaEvaluations.findIndex(
       (e) => e.rubricId === rubric._id
@@ -151,6 +157,7 @@ export default function GradingPage() {
       rubricId: rubric._id!,
       selectedLevelIndex: levelIndex,
       feedback: existingEvalIndex >= 0 ? answer.criteriaEvaluations[existingEvalIndex].feedback : '',
+      confirmedByUser: true, // Mark as confirmed when user clicks
     };
 
     let updatedEvaluations: CriteriaEvaluation[];
@@ -611,12 +618,18 @@ export default function GradingPage() {
                                   )}
                                 </h4>
 
-                                <div className="mb-4">
+                                  <div className="mb-4">
                                   <p className="text-sm font-semibold text-gray-700 mb-2">Select Level:</p>
                                   <div className="grid grid-cols-1 gap-2">
                                     {rubric.levels.map((level, levelIdx) => {
                                       const isSelected =
                                         evaluation?.selectedLevelIndex === levelIdx;
+                                      
+                                      // Check if this selection has been confirmed by the user
+                                      const confirmKey = `${answer._id}-${rubric._id}`;
+                                      const isConfirmedInState = confirmedSelections[confirmKey] || false;
+                                      const isConfirmedInDB = evaluation?.confirmedByUser || false;
+                                      const isConfirmed = isConfirmedInState || isConfirmedInDB;
 
                                       return (
                                         <button
@@ -625,9 +638,12 @@ export default function GradingPage() {
                                           onClick={() =>
                                             selectCriteriaLevel(answer._id!, rubric, levelIdx)
                                           }
-                                          className={`p-4 rounded-lg border-2 text-left transition-all ${isSelected
-                                            ? 'border-indigo-600 bg-indigo-50 shadow-md'
-                                            : 'border-gray-300 hover:border-indigo-400 bg-white'
+                                          className={`p-4 rounded-lg border-2 text-left transition-all ${
+                                            isSelected && isConfirmed
+                                              ? 'border-indigo-600 bg-indigo-50 shadow-md'
+                                              : isSelected && !isConfirmed
+                                              ? 'border-yellow-500 bg-yellow-50 shadow-md'
+                                              : 'border-gray-300 hover:border-indigo-400 bg-white'
                                             }`}
                                         >
                                           <div className="flex justify-between items-start">

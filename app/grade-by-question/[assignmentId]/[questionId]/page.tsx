@@ -31,6 +31,7 @@ interface CriteriaEvaluation {
   selectedLevelIndex: number;
   feedback: string;
   agentSuggestions?: AgentSuggestion[];
+  confirmedByUser?: boolean;
 }
 
 interface Answer {
@@ -106,6 +107,7 @@ export default function GradeByQuestionPage() {
   const [localAnswers, setLocalAnswers] = useState<{ [answerId: string]: Answer }>({});
   const [editingAnswerId, setEditingAnswerId] = useState<string | null>(null);
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null);
+  const [confirmedSelections, setConfirmedSelections] = useState<{ [key: string]: boolean }>({});
   
   // Ref for agent menu to detect clicks outside
   const agentMenuRef = useState<HTMLDivElement | null>(null)[0];
@@ -170,6 +172,22 @@ export default function GradeByQuestionPage() {
       setSelectedAnswerId(answers[0]._id);
     }
   }, [answers, selectedAnswerId]);
+  
+  useEffect(() => {
+    // Fetch statuses for all questions
+    const fetchQuestionStatuses = async () => {
+      const statuses: { [questionId: string]: string } = {};
+      for (const q of questions) {
+        const status = await getQuestionGradingStatus(q._id);
+        statuses[q._id] = status;
+      }
+      setQuestionStatuses(statuses);
+    };
+    
+    if (questions.length > 0) {
+      fetchQuestionStatuses();
+    }
+  }, [questions, answers]);
 
   const fetchData = async () => {
     try {
@@ -273,6 +291,10 @@ export default function GradeByQuestionPage() {
     const answer = localAnswers[answerId];
     const level = rubric.levels[levelIndex];
 
+    // Mark this selection as confirmed by the user
+    const confirmKey = `${answerId}-${rubric._id}`;
+    setConfirmedSelections(prev => ({ ...prev, [confirmKey]: true }));
+
     // Find or create evaluation for this criteria
     const existingEvalIndex = answer.criteriaEvaluations.findIndex(
       (e) => e.rubricId === rubric._id
@@ -283,6 +305,7 @@ export default function GradeByQuestionPage() {
       selectedLevelIndex: levelIndex,
       feedback: existingEvalIndex >= 0 ? answer.criteriaEvaluations[existingEvalIndex].feedback : '',
       agentSuggestions: existingEvalIndex >= 0 ? answer.criteriaEvaluations[existingEvalIndex].agentSuggestions : [],
+      confirmedByUser: true, // Mark as confirmed when user clicks
     };
 
     let updatedEvaluations: CriteriaEvaluation[];
@@ -719,6 +742,7 @@ export default function GradeByQuestionPage() {
                       improvementSuggestion: suggestion.improvementSuggestion,
                     },
                   ],
+                  confirmedByUser: evaluation.confirmedByUser, // Preserve confirmation status
                 };
               }
 
@@ -760,6 +784,7 @@ export default function GradeByQuestionPage() {
                       improvementSuggestion: s.improvementSuggestion,
                     },
                   ],
+                  confirmedByUser: false, // New AI suggestions are not confirmed
                 };
               });
 
@@ -853,6 +878,37 @@ export default function GradeByQuestionPage() {
     }).length;
   };
   
+  // Get grading status for a specific question
+  const getQuestionGradingStatus = async (targetQuestionId: string) => {
+    try {
+      // Fetch answers for this question
+      const answersRes = await fetch(`/api/answers?questionId=${targetQuestionId}`);
+      const answersData = await answersRes.json();
+      
+      // Fetch rubrics for this question
+      const rubricsRes = await fetch(`/api/rubrics?questionId=${targetQuestionId}`);
+      const rubricsData = await rubricsRes.json();
+      
+      if (answersData.length === 0 || rubricsData.length === 0) {
+        return 'not-graded';
+      }
+      
+      const gradedCount = answersData.filter((a: Answer) => 
+        a.criteriaEvaluations.length === rubricsData.length && rubricsData.length > 0
+      ).length;
+      
+      if (gradedCount === 0) return 'not-graded';
+      if (gradedCount === answersData.length) return 'fully-graded';
+      return 'partially-graded';
+    } catch (error) {
+      console.error('Error getting question status:', error);
+      return 'not-graded';
+    }
+  };
+  
+  // Store question statuses
+  const [questionStatuses, setQuestionStatuses] = useState<{ [questionId: string]: string }>({});
+  
   // Helper function to get the first letter of model provider
   const getModelProviderLetter = (model?: string) => {
     if (!model) return 'g';
@@ -910,19 +966,28 @@ export default function GradeByQuestionPage() {
               {/* Question Navigation - Inline */}
               <div className="border-l border-gray-300 h-6"></div>
               <div className="flex gap-2">
-                {questions.map((q) => (
-                  <button
-                    key={q._id}
-                    onClick={() => navigateToQuestion(q._id)}
-                    className={`px-3 py-1 rounded-lg font-semibold text-sm transition-colors ${
-                      q._id === questionId
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                    }`}
-                  >
-                    Q{q.questionNumber}
-                  </button>
-                ))}
+                {questions.map((q) => {
+                  const status = questionStatuses[q._id] || 'not-graded';
+                  return (
+                    <button
+                      key={q._id}
+                      onClick={() => navigateToQuestion(q._id)}
+                      className={`px-3 py-1 rounded-lg font-semibold text-sm transition-colors flex items-center gap-1 ${
+                        q._id === questionId
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                      }`}
+                    >
+                      Q{q.questionNumber}
+                      {status === 'fully-graded' && (
+                        <span className="text-green-500 text-base">✓</span>
+                      )}
+                      {status === 'partially-graded' && (
+                        <span className="text-yellow-500 text-base">🕐</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             
@@ -1248,6 +1313,14 @@ export default function GradeByQuestionPage() {
                                         const agentsForThisLevel = agentSuggestions.filter(
                                           s => s.suggestedLevelIndex === levelIdx
                                         );
+                                        
+                                        // Check if this level is AI-suggested but not yet confirmed
+                                        const confirmKey = `${answer._id}-${rubric._id}`;
+                                        const isConfirmedInState = confirmedSelections[confirmKey] || false;
+                                        const isConfirmedInDB = evaluation?.confirmedByUser || false;
+                                        const isConfirmed = isConfirmedInState || isConfirmedInDB;
+                                        const hasAgentSuggestion = agentsForThisLevel.length > 0;
+                                        const isAISuggestedUnconfirmed = isSelected && hasAgentSuggestion && !isConfirmed;
 
                                         return (
                                           <button
@@ -1255,8 +1328,10 @@ export default function GradeByQuestionPage() {
                                             type="button"
                                             onClick={() => selectCriteriaLevel(answer._id!, rubric, levelIdx)}
                                             className={`w-full p-2 rounded-lg border-2 text-left transition-all ${
-                                              isSelected
+                                              isSelected && isConfirmed
                                                 ? 'border-indigo-600 bg-indigo-50 shadow-md'
+                                                : isAISuggestedUnconfirmed
+                                                ? 'border-yellow-500 bg-yellow-50 shadow-md'
                                                 : 'border-gray-300 hover:border-indigo-400 bg-white'
                                             }`}
                                           >

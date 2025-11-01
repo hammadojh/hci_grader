@@ -125,6 +125,14 @@ export default function AssignmentDetail() {
   // Track which questions have rubrics expanded
   const [expandedRubrics, setExpandedRubrics] = useState<{ [questionId: string]: boolean }>({});
 
+  // Batch upload state
+  const [showBatchUpload, setShowBatchUpload] = useState(false);
+  const [selectedBatchFiles, setSelectedBatchFiles] = useState<File[]>([]);
+  const [batchUploadId, setBatchUploadId] = useState<string | null>(null);
+  const [batchStatus, setBatchStatus] = useState<any>(null);
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+  const [batchPollingInterval, setBatchPollingInterval] = useState<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     fetchAssignment();
     fetchQuestions();
@@ -681,6 +689,165 @@ export default function AssignmentDetail() {
 
   const exportCSV = () => {
     window.open(`/api/export?assignmentId=${assignmentId}`, '_blank');
+  };
+
+  // Batch upload functions
+  const openBatchUpload = () => {
+    setShowBatchUpload(true);
+    setSelectedBatchFiles([]);
+    setBatchUploadId(null);
+    setBatchStatus(null);
+    setIsProcessingBatch(false);
+  };
+
+  const closeBatchUpload = () => {
+    setShowBatchUpload(false);
+    setSelectedBatchFiles([]);
+    setBatchUploadId(null);
+    setBatchStatus(null);
+    setIsProcessingBatch(false);
+    if (batchPollingInterval) {
+      clearInterval(batchPollingInterval);
+      setBatchPollingInterval(null);
+    }
+    // Refresh submissions
+    fetchSubmissions();
+  };
+
+  const handleBatchFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const validFiles = files.filter(file => {
+      const isValid = file.type === 'application/pdf' ||
+                     file.type.startsWith('image/') ||
+                     file.name.endsWith('.md') ||
+                     file.name.endsWith('.markdown') ||
+                     file.type.startsWith('text/');
+      return isValid;
+    });
+    setSelectedBatchFiles(validFiles);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Array.from(e.dataTransfer.files);
+    const validFiles = files.filter(file => {
+      const isValid = file.type === 'application/pdf' ||
+                     file.type.startsWith('image/') ||
+                     file.name.endsWith('.md') ||
+                     file.name.endsWith('.markdown') ||
+                     file.type.startsWith('text/');
+      return isValid;
+    });
+    setSelectedBatchFiles(prev => [...prev, ...validFiles]);
+  };
+
+  const removeBatchFile = (index: number) => {
+    setSelectedBatchFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const pollBatchStatus = async (batchId: string) => {
+    try {
+      const res = await fetch(`/api/batch-upload?batchId=${batchId}`);
+      const data = await res.json();
+      setBatchStatus(data);
+      
+      // If batch is completed or failed, stop polling
+      if (data.status === 'completed' || data.status === 'partial' || data.status === 'failed') {
+        if (batchPollingInterval) {
+          clearInterval(batchPollingInterval);
+          setBatchPollingInterval(null);
+        }
+        setIsProcessingBatch(false);
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+    }
+  };
+
+  const startBatchUpload = async () => {
+    if (selectedBatchFiles.length === 0) return;
+    
+    setIsProcessingBatch(true);
+    
+    try {
+      // Step 1: Initialize batch upload
+      const initRes = await fetch('/api/batch-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentId,
+          files: selectedBatchFiles.map(f => ({
+            name: f.name,
+            size: f.size,
+          })),
+        }),
+      });
+      
+      const initData = await initRes.json();
+      const newBatchId = initData.batchId;
+      setBatchUploadId(newBatchId);
+      
+      // Step 2: Start polling for status
+      const interval = setInterval(() => pollBatchStatus(newBatchId), 2000);
+      setBatchPollingInterval(interval);
+      
+      // Step 3: Process each file in the background
+      selectedBatchFiles.forEach((file, index) => {
+        processFileAsync(file, newBatchId, index);
+      });
+      
+    } catch (error) {
+      console.error('Batch upload error:', error);
+      setIsProcessingBatch(false);
+      alert('Failed to start batch upload');
+    }
+  };
+
+  const processFileAsync = async (file: File, batchId: string, fileIndex: number) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('batchId', batchId);
+      formData.append('fileIndex', fileIndex.toString());
+      formData.append('assignmentId', assignmentId);
+      
+      await fetch('/api/batch-upload/process-file', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      // Poll immediately after completion
+      await pollBatchStatus(batchId);
+      
+    } catch (error) {
+      console.error(`Error processing file ${file.name}:`, error);
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'pending': return '⏳';
+      case 'processing': return '🔄';
+      case 'completed': return '✅';
+      case 'error': return '❌';
+      default: return '⏳';
+    }
+  };
+
+  const getStepText = (step?: string) => {
+    switch (step) {
+      case 'extracting_text': return 'Extracting text...';
+      case 'extracting_metadata': return 'Extracting name & email...';
+      case 'parsing_answers': return 'Parsing answers...';
+      case 'creating_submission': return 'Creating submission...';
+      default: return 'Waiting...';
+    }
   };
 
   const toggleRubrics = (questionId: string) => {
@@ -1241,6 +1408,12 @@ export default function AssignmentDetail() {
                       📝 Grade by Question
                     </Link>
                   )}
+                  <button
+                    onClick={openBatchUpload}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                  >
+                    📦 Batch Upload
+                  </button>
                   <button
                     onClick={() => {
                       if (showSubmissionForm) {
@@ -1911,6 +2084,219 @@ Include all stages and explain each one.
                         ✓ Confirm & Add All Questions
                       </button>
                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Batch Upload Modal */}
+        {showBatchUpload && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-800">📦 Batch Upload Submissions</h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Upload multiple student submissions at once. AI will extract names, emails, and answers automatically.
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeBatchUpload}
+                    className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                {!batchUploadId && (
+                  <>
+                    {/* File Upload Zone */}
+                    <div
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-purple-500 transition-colors mb-6"
+                    >
+                      <input
+                        type="file"
+                        accept="application/pdf,image/*,.md,.markdown,text/*"
+                        multiple
+                        onChange={handleBatchFileSelect}
+                        className="hidden"
+                        id="batch-file-upload"
+                      />
+                      <label htmlFor="batch-file-upload" className="cursor-pointer">
+                        <div className="text-6xl mb-3">📁</div>
+                        <p className="text-gray-700 font-semibold mb-2">
+                          Click to select files or drag and drop here
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Supported: PDF, Images (with OCR), Markdown, Text files
+                        </p>
+                        <p className="text-xs text-gray-400 mt-2">
+                          Multiple files can be selected at once
+                        </p>
+                      </label>
+                    </div>
+
+                    {/* Selected Files List */}
+                    {selectedBatchFiles.length > 0 && (
+                      <div className="mb-6">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                          Selected Files ({selectedBatchFiles.length})
+                        </h3>
+                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                          {selectedBatchFiles.map((file, index) => (
+                            <div
+                              key={index}
+                              className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200"
+                            >
+                              <div className="flex items-center gap-3 flex-1">
+                                <span className="text-2xl">
+                                  {file.type.startsWith('image/') ? '🖼️' : '📄'}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-gray-800 truncate">{file.name}</p>
+                                  <p className="text-xs text-gray-500">
+                                    {(file.size / 1024 / 1024).toFixed(2)} MB
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeBatchFile(index)}
+                                className="text-red-600 hover:text-red-800 font-semibold text-sm px-3"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Start Upload Button */}
+                    {selectedBatchFiles.length > 0 && (
+                      <div className="flex justify-end gap-3">
+                        <button
+                          onClick={closeBatchUpload}
+                          className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={startBatchUpload}
+                          disabled={isProcessingBatch}
+                          className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                        >
+                          {isProcessingBatch ? '🔄 Processing...' : `🚀 Start Processing ${selectedBatchFiles.length} File(s)`}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Processing Status */}
+                {batchUploadId && batchStatus && (
+                  <div>
+                    {/* Overall Progress */}
+                    <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                      <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-lg font-semibold text-purple-900">
+                          {batchStatus.status === 'processing' && '🔄 Processing Files...'}
+                          {batchStatus.status === 'completed' && '✅ All Files Processed!'}
+                          {batchStatus.status === 'partial' && '⚠️ Processing Complete (with errors)'}
+                          {batchStatus.status === 'failed' && '❌ Processing Failed'}
+                        </h3>
+                        <span className="text-sm font-semibold text-purple-800">
+                          {batchStatus.completedFiles + batchStatus.failedFiles} / {batchStatus.totalFiles}
+                        </span>
+                      </div>
+                      <div className="w-full bg-purple-200 rounded-full h-3 mb-2">
+                        <div
+                          className="bg-purple-600 h-3 rounded-full transition-all duration-300"
+                          style={{
+                            width: `${((batchStatus.completedFiles + batchStatus.failedFiles) / batchStatus.totalFiles) * 100}%`
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-purple-700">
+                        <span>✅ {batchStatus.completedFiles} completed</span>
+                        {batchStatus.failedFiles > 0 && <span>❌ {batchStatus.failedFiles} failed</span>}
+                      </div>
+                    </div>
+
+                    {/* Individual File Status */}
+                    <div className="space-y-3 mb-6">
+                      <h4 className="text-md font-semibold text-gray-800">File Details:</h4>
+                      {batchStatus.files.map((file: any, index: number) => (
+                        <div
+                          key={index}
+                          className={`border rounded-lg p-4 ${
+                            file.status === 'completed' ? 'bg-green-50 border-green-200' :
+                            file.status === 'error' ? 'bg-red-50 border-red-200' :
+                            file.status === 'processing' ? 'bg-blue-50 border-blue-200' :
+                            'bg-gray-50 border-gray-200'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-start gap-3 flex-1">
+                              <span className="text-2xl">{getStatusIcon(file.status)}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-gray-900 truncate">{file.fileName}</p>
+                                {file.status === 'processing' && (
+                                  <p className="text-sm text-blue-700 mt-1">{getStepText(file.currentStep)}</p>
+                                )}
+                                {file.status === 'completed' && file.studentName && (
+                                  <div className="text-sm text-green-700 mt-1">
+                                    <p>👤 {file.studentName}</p>
+                                    <p>📧 {file.studentEmail}</p>
+                                  </div>
+                                )}
+                                {file.status === 'error' && (
+                                  <p className="text-sm text-red-700 mt-1">{file.error}</p>
+                                )}
+                              </div>
+                            </div>
+                            {file.submissionId && (
+                              <Link
+                                href={`/grade/${file.submissionId}`}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors ml-2"
+                              >
+                                View
+                              </Link>
+                            )}
+                          </div>
+                          
+                          {/* Progress Bar for Individual File */}
+                          {file.status === 'processing' && (
+                            <div className="mt-2">
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${file.progress || 0}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Action Button */}
+                    {(batchStatus.status === 'completed' || batchStatus.status === 'partial' || batchStatus.status === 'failed') && (
+                      <div className="flex justify-end">
+                        <button
+                          onClick={closeBatchUpload}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                        >
+                          ✓ Done
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

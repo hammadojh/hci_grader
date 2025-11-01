@@ -5,12 +5,12 @@ import { Answer } from '@/models/Answer';
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectDB();
     
-    const submissionId = params.id;
+    const { id: submissionId } = await params;
     
     // Delete all associated answers first
     await Answer.deleteMany({ submissionId });

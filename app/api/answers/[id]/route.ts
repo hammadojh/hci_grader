@@ -4,12 +4,12 @@ import { Answer } from '@/models/Answer';
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectDB();
     
-    const answerId = params.id;
+    const { id: answerId } = await params;
     
     const answer = await Answer.findByIdAndDelete(answerId);
     

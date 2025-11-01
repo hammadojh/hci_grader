@@ -6,6 +6,9 @@ export interface ISubmission {
   studentName: string;
   studentEmail: string;
   submittedAt?: Date;
+  processingStatus?: 'pending' | 'processing' | 'completed' | 'error';
+  extractedText?: string; // Store the original extracted text
+  batchUploadId?: string; // Reference to batch upload if part of batch
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -28,6 +31,18 @@ const SubmissionSchema = new Schema<ISubmission>(
     submittedAt: {
       type: Date,
       default: Date.now,
+    },
+    processingStatus: {
+      type: String,
+      enum: ['pending', 'processing', 'completed', 'error'],
+      default: 'completed',
+    },
+    extractedText: {
+      type: String,
+    },
+    batchUploadId: {
+      type: String,
+      ref: 'BatchUpload',
     },
   },
   {
